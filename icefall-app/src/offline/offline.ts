@@ -32,3 +32,15 @@ export const OFFLINE = import.meta.env.VITE_ICEFALL_OFFLINE === "1";
  * the internet demo. Neither set is production, unchanged.
  */
 export const DEMO = OFFLINE || import.meta.env.VITE_ICEFALL_DEMO === "1";
+
+/**
+ * THE MOUNTAIN MODE REVIEW SWITCH — connectivity, not data.
+ *
+ * The owner reviews on a laptop that always has a signal. With
+ * `VITE_ICEFALL_FORCE_MOUNTAIN=1` the connectivity signal reads "unreachable"
+ * from the first frame (`trip/connectivity.ts` reads the variable inline), so
+ * the app boots into Mountain mode exactly as a phone with no signal would.
+ * It does NOT imply DEMO: pair it with `VITE_ICEFALL_OFFLINE=1` for the
+ * sample athlete. Unset, this is `false` and every branch on it folds away.
+ */
+export const FORCE_MOUNTAIN = import.meta.env.VITE_ICEFALL_FORCE_MOUNTAIN === "1";

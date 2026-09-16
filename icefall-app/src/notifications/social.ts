@@ -15,9 +15,16 @@ import type { MarkKind } from "@/components/ui/VerificationMark";
  *
  * ── THIS IS THE HALF THAT COMES FROM A SERVER ────────────────────────────────
  *
- * This module is the whole of the Notifications screen. Three tables, read
- * live, each row written by somebody else doing something to something of
- * yours. Nothing below is derived, inferred, or filled in.
+ * This module is the whole of the Notifications screen. Three tables, four
+ * reads, live, each row written by somebody else doing something to
+ * something of yours. Nothing below is derived, inferred, or filled in.
+ *
+ * THE FOURTH READ, ADDED 20260915: a reply to your comment. It is the same
+ * table as "comment" — `post_comments` — filtered a different way:
+ * `parent_author_id = you` rather than `post.author_id = you`. Two rows on
+ * one table with two different meanings of "about you" is exactly why the
+ * column exists rather than a client-side self-join — see
+ * `20260915120000_comment_replies.sql`, which sets it, never this file.
  *
  * There used to be a second half — `./feed.ts`, which computed items from state
  * already on this phone: unread threads, today's session, an objective
@@ -37,7 +44,7 @@ import type { MarkKind } from "@/components/ui/VerificationMark";
  * there are more than that now. A number that has to be re-counted to stay true
  * does not belong in a comment.)
  *
- * ── THE THREE READS, AND WHY THEY ARE ALLOWED ────────────────────────────────
+ * ── THE FOUR READS, AND WHY THEY ARE ALLOWED ─────────────────────────────────
  *
  * Checked against the live policies, not assumed:
  *
@@ -50,7 +57,11 @@ import type { MarkKind } from "@/components/ui/VerificationMark";
  *                           readable wherever the post is, unless the liker is
  *                           blocked.
  *   `post_comments_select`  (20260831190000, REWRITTEN by 20260903010000) —
- *                           the same rule, on the comment's author.
+ *                           the same rule, on the comment's author. Both
+ *                           "comment" and "reply" below read this one table
+ *                           under this one policy — a reply is a comment row,
+ *                           filtered differently, not a different table with
+ *                           a different rule to keep in step with this one.
  *
  * THE BLOCK ARMS ARE NOT DECORATION and this paragraph did not have them until
  * 2026-09-06: it described the ORIGINAL policies, which
@@ -75,9 +86,9 @@ import type { MarkKind } from "@/components/ui/VerificationMark";
  * deliberately. A follow from somebody you have blocked not appearing is the
  * feature working.
  *
- * So: DO NOT ADD A "MAY BE MORE THAN THIS" BRANCH TO THE EMPTY CASE for follows
- * and comments. `state: "ready"` with none of those is a measured zero, and
- * softening it into a maybe would be an invented doubt.
+ * So: DO NOT ADD A "MAY BE MORE THAN THIS" BRANCH TO THE EMPTY CASE for
+ * follows, comments and replies. `state: "ready"` with none of those is a
+ * measured zero, and softening it into a maybe would be an invented doubt.
  *
  * LIKES ARE THE EXCEPTION AND THE SCREEN MUST SAY SO. Nothing in this app
  * writes a `post_likes` row — `social/posts.ts` states it outright, and the
@@ -110,7 +121,7 @@ const untyped = supabase as unknown as SupabaseClient | null;
 /* Shapes                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export type SocialNoticeKind = "follow" | "like" | "comment";
+export type SocialNoticeKind = "follow" | "like" | "comment" | "reply";
 
 /**
  * The person who did it — A REAL ACCOUNT, resolved from `profiles`.
@@ -169,10 +180,17 @@ export interface SocialNotice {
   actor: NoticeActor;
   /** ISO, from the row's own `created_at`. Never `now()`, never estimated. */
   at: string;
-  /** Set for "like" and "comment". Absent for "follow". */
+  /** Set for "like", "comment" and "reply". Absent for "follow". */
   post?: NoticePost;
-  /** The comment's own words. Set for "comment" only. */
+  /** The comment's or reply's own words. Set for "comment" and "reply" only. */
   body?: string;
+  /**
+   * `post_comments.id` — the row itself. Set for "comment" and "reply", both
+   * of which are one. Absent for "follow" and "like", neither of which names
+   * a comment. This is what lets a tap land on the exact row rather than
+   * merely the post it is on: see `destinationFor` in `Notifications.tsx`.
+   */
+  commentId?: string;
 }
 
 /**
@@ -347,15 +365,15 @@ const MESSAGES: Record<Exclude<SocialNoticeState, "loading" | "ready">, string> 
 /**
  * IT IS LIMITED AND PAGED, and this is which.
  *
- * Each of the three queries takes the newest `PAGE * pages` rows and no more,
- * server-side, ordered by `created_at desc`. The three results are merged, re-
+ * Each of the four queries takes the newest `PAGE * pages` rows and no more,
+ * server-side, ordered by `created_at desc`. The four results are merged, re-
  * sorted, and cut back to the same number — which is exactly the newest N of
  * the union, because anything dropped is older than N rows already held. A
  * profile with ten thousand likes therefore reads thirty rows to render thirty.
  *
  * `loadMore` widens the window by one page and re-reads. That is a re-fetch
- * rather than a keyset cursor, deliberately: three streams merged by time need
- * three cursors kept in step, and a notifications list that goes four pages
+ * rather than a keyset cursor, deliberately: four streams merged by time need
+ * four cursors kept in step, and a notifications list that goes four pages
  * deep is already an unusual session. `MAX_PAGES` is the hard ceiling, so the
  * worst case any one read can cost is 120 rows per source.
  */
@@ -788,20 +806,41 @@ async function read(limit: number, signal: AbortSignal): Promise<ReadResult> {
       .limit(limit),
   );
 
-  const [followRows, likeRows, commentRows] = await Promise.all([
+  /*
+   * 4. REPLIES TO YOUR OWN COMMENT — `parent_author_id = you`, the column
+   * `20260915120000_comment_replies.sql` set for exactly this filter (see the
+   * module header). Not `!inner` on `posts`: unlike the comment read above,
+   * ownership here is never tested against the post — the row is about you
+   * because YOU wrote the comment being replied to, whatever post it is on —
+   * so the embed is a plain left join and a post RLS has since hidden reads
+   * back `null`, which `build` already treats as "no title" rather than
+   * dropping the notice (see `one`, shared with the comment and like reads).
+   */
+  const replies = bound(
+    db
+      .from("post_comments")
+      .select("id, post_id, author_id, body, created_at, post:posts(id, body)")
+      .eq("parent_author_id", me)
+      .neq("author_id", me)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  );
+
+  const [followRows, likeRows, commentRows, replyRows] = await Promise.all([
     run(follows),
     run(likes),
     run(comments),
+    run(replies),
   ]);
 
   /*
    * ANY FAILURE FAILS THE WHOLE READ, and that is the honest choice rather than
-   * the convenient one. Three streams merge into one list with nowhere on a row
+   * the convenient one. Four streams merge into one list with nowhere on a row
    * to say which source is missing, so a list drawn without its follows looks
    * exactly like a complete list with no follows in it. Losing the screen for a
    * moment is recoverable; "nobody followed you" when three people did is not.
    */
-  const failures = [followRows, likeRows, commentRows]
+  const failures = [followRows, likeRows, commentRows, replyRows]
     .map((r) => r.failure)
     .filter((f): f is Failure => f !== null);
   if (failures.length > 0) {
@@ -822,6 +861,10 @@ async function read(limit: number, signal: AbortSignal): Promise<ReadResult> {
     const id = str(row.author_id);
     if (id) actorIds.add(id);
   }
+  for (const row of replyRows.rows) {
+    const id = str(row.author_id);
+    if (id) actorIds.add(id);
+  }
 
   const resolved = await readActors(db, [...actorIds], deadline);
   // A notice needs a name, so an actor lookup that failed fails the read for the
@@ -829,7 +872,13 @@ async function read(limit: number, signal: AbortSignal): Promise<ReadResult> {
   // claims to be the whole one.
   if (!resolved.ok) return { kind: resolved.failure, uid: me };
 
-  const notices = build(followRows.rows, likeRows.rows, commentRows.rows, resolved.actors);
+  const notices = build(
+    followRows.rows,
+    likeRows.rows,
+    commentRows.rows,
+    replyRows.rows,
+    resolved.actors,
+  );
 
   return {
     kind: "ready",
@@ -840,7 +889,8 @@ async function read(limit: number, signal: AbortSignal): Promise<ReadResult> {
     more:
       followRows.rows.length >= limit ||
       likeRows.rows.length >= limit ||
-      commentRows.rows.length >= limit,
+      commentRows.rows.length >= limit ||
+      replyRows.rows.length >= limit,
     uid: me,
   };
 }
@@ -858,9 +908,23 @@ function build(
   followRows: Record<string, unknown>[],
   likeRows: Record<string, unknown>[],
   commentRows: Record<string, unknown>[],
+  replyRows: Record<string, unknown>[],
   actors: Map<string, NoticeActor>,
 ): SocialNotice[] {
   const out: SocialNotice[] = [];
+
+  /*
+   * A ROW CAN QUALIFY FOR BOTH READS AT ONCE: somebody replies to your own
+   * comment on your own post, and that single `post_comments` row is both
+   * "somebody commented on your post" (query 3) and "somebody replied to
+   * your comment" (query 4). Rendering it twice would be ICEFALL inventing a
+   * second event out of one. "Replied to your comment" is the more specific,
+   * more true sentence of the two — it names what actually happened, where
+   * "commented on your post" would also be true of a stranger's unrelated
+   * top-level comment — so the reply wins and the comment loop below skips
+   * any id already claimed here.
+   */
+  const claimedByReply = new Set(replyRows.map((row) => str(row.id)).filter((id): id is string => id !== null));
 
   for (const row of followRows) {
     const id = str(row.id);
@@ -889,6 +953,7 @@ function build(
 
   for (const row of commentRows) {
     const id = str(row.id);
+    if (id && claimedByReply.has(id)) continue; // see claimedByReply, above.
     const at = when(row.created_at);
     const actor = actors.get(str(row.author_id) ?? "");
     const post = one(row.post);
@@ -904,6 +969,29 @@ function build(
       // The comment whole, not excerpted: a reply is the thing the reader is
       // being notified about, and half of it is a different message.
       body,
+      commentId: id,
+    });
+  }
+
+  for (const row of replyRows) {
+    const id = str(row.id);
+    const at = when(row.created_at);
+    const actor = actors.get(str(row.author_id) ?? "");
+    const post = one(row.post);
+    const postId = str(post?.id) ?? str(row.post_id);
+    const body = str(row.body);
+    if (!id || !at || !actor || !postId || !body) continue;
+    out.push({
+      id: `reply:${id}`,
+      kind: "reply",
+      actor,
+      at,
+      post: { id: postId, title: openingLine(post?.body) },
+      body,
+      // The reply's OWN id, not the comment it replied to — a tap has to land
+      // on the row that actually says "somebody replied", not on the one
+      // that prompted it.
+      commentId: id,
     });
   }
 

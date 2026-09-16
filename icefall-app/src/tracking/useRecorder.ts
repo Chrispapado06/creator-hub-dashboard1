@@ -9,6 +9,8 @@ import { DISPLAY_INTERVAL_MS, PERSIST_INTERVAL_MS, transitionKey } from "./displ
 import type { BoundRoute } from "./follow";
 import type { ActivityTypeId, RecordedActivity, RecorderSnapshot, SourceState } from "./types";
 import { activityById } from "./activities";
+import { ScreenWakeLock, type WakeLockState } from "./wakeLock";
+import { recordPosition } from "@/mountain/position";
 
 /**
  * Binds the framework-free recorder to React.
@@ -211,7 +213,11 @@ export function useRecorder({
     gpsRef.current = src;
 
     await src.start(
-      (sample) => recorder.pushGeo(sample),
+      (sample) => {
+        recorder.pushGeo(sample);
+        // Mountain mode's SOS and Now read the last fix without a recorder.
+        if (!sample.simulated) recordPosition(sample);
+      },
       (state) => {
         setGpsState(state);
         recorder.setGpsAvailable(state.status === "live" || state.status === "connecting");
@@ -233,21 +239,18 @@ export function useRecorder({
   }, []);
 
   /* ------------------------------------------------------------------ */
-  /* Screen wake lock — the screen going dark mid-climb is a real problem */
+  /* Screen wake lock — see ./wakeLock.ts for the three defects it fixes  */
   /* ------------------------------------------------------------------ */
 
-  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+  const wakeLockRef = useRef<ScreenWakeLock | null>(null);
+  if (!wakeLockRef.current) wakeLockRef.current = new ScreenWakeLock();
+  const wakeLock = wakeLockRef.current;
+  const [wakeLockState, setWakeLockState] = useState<WakeLockState>(wakeLock.getState());
+  useEffect(() => wakeLock.subscribe(setWakeLockState), [wakeLock]);
 
   const requestWakeLock = useCallback(async () => {
-    try {
-      const nav = navigator as unknown as {
-        wakeLock?: { request(type: "screen"): Promise<{ release: () => Promise<void> }> };
-      };
-      if (nav.wakeLock) wakeLockRef.current = await nav.wakeLock.request("screen");
-    } catch {
-      /* not fatal — tracking continues without it */
-    }
-  }, []);
+    await wakeLock.acquire();
+  }, [wakeLock]);
 
   /* ------------------------------------------------------------------ */
   /* A recording with no live source is a recording of nothing            */
@@ -322,19 +325,17 @@ export function useRecorder({
     clearActiveSession();
     gpsRef.current?.stop();
     hrRef.current?.stop();
-    wakeLockRef.current?.release().catch(() => {});
-    wakeLockRef.current = null;
+    wakeLock.release();
     return rec;
-  }, [recorder]);
+  }, [recorder, wakeLock]);
 
   /** Abandon the activity without saving it — clears the persisted session. */
   const discard = useCallback(() => {
     clearActiveSession();
     gpsRef.current?.stop();
     hrRef.current?.stop();
-    wakeLockRef.current?.release().catch(() => {});
-    wakeLockRef.current = null;
-  }, []);
+    wakeLock.release();
+  }, [wakeLock]);
 
   /* ------------------------------------------------------------------ */
   /* Live cues                                                          */
@@ -377,9 +378,9 @@ export function useRecorder({
       gpsRef.current?.stop();
       hrRef.current?.stop();
       recorder.destroy();
-      wakeLockRef.current?.release().catch(() => {});
+      wakeLock.release();
     },
-    [recorder],
+    [recorder, wakeLock],
   );
 
   return {
@@ -389,6 +390,8 @@ export function useRecorder({
     hrState,
     cue,
     dismissCue: () => setCue(null),
+    /** Whether the screen is being kept on, with the sentence to show. */
+    wakeLock: wakeLockState,
     /** True when this mount restored an activity that was still in progress. */
     resumed: resumedRef.current,
     /** The route being followed — the caller's, or a resumed session's own. */

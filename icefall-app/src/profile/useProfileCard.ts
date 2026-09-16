@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { BADGES, badgeState } from "@/badges/model";
 import { useMyProfile } from "@/auth/useMyProfile";
 import { useSettings } from "@/settings/store";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { fmtDate } from "@/lib/format";
 import type { SharedProfile } from "@/profile/shareLink";
 import type { ProfileCardData } from "@/share/renderCard";
@@ -38,7 +38,7 @@ import type { ProfileCardData } from "@/share/renderCard";
  * EVERYTHING IS MEMOISED TOGETHER, deliberately. `ShareProfile` re-renders the
  * canvas whenever the card changes, so a freshly built object on every render
  * would be a render loop rather than a performance note. The dependencies are
- * all memoised or `useState`-held upstream (`user` and `goals` in AppState,
+ * all memoised or `useState`-held upstream (`user` in AppState, the objective from `usePrimaryGoal`,
  * `settings` in the settings store, `useMyProfile`'s own state), so this holds.
  */
 export interface ProfileCardSources {
@@ -49,7 +49,8 @@ export interface ProfileCardSources {
 }
 
 export function useProfileCard(): ProfileCardSources {
-  const { user, goals, currentTier } = useApp();
+  const { user, currentTier } = useApp();
+  const objective = usePrimaryGoal();
   const { settings } = useSettings();
   const my = useMyProfile();
 
@@ -64,7 +65,6 @@ export function useProfileCard(): ProfileCardSources {
 
   return useMemo<ProfileCardSources>(() => {
     const handle = serverHandle ?? settings.username ?? null;
-    const objective = goals.find((g) => g.status === "active");
     const highestM = user.summits.reduce((m, s) => Math.max(m, s.elevationM ?? 0), 0);
     const earnedBadges = BADGES.filter(
       (b) => badgeState(b, settings, currentTier).kind === "earned",
@@ -120,5 +120,5 @@ export function useProfileCard(): ProfileCardSources {
     };
 
     return { shared, card };
-  }, [user, goals, settings, currentTier, serverHandle, serverId]);
+  }, [user, objective, settings, currentTier, serverHandle, serverId]);
 }

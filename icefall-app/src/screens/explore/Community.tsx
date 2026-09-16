@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ChevronRight,
   Flag,
@@ -36,6 +36,8 @@ import {
   FEED_FILTERS,
   SHOW_DEMO_COMMUNITY,
   communityPosts,
+  feedDetail,
+  feedPost,
   type FeedFilter,
 } from "@/social/community";
 import {
@@ -45,7 +47,7 @@ import {
   usePromotedFeedPlacements,
 } from "@/social/promoted";
 import { interleaveFeed } from "@/social/promotedSlides";
-import { CREATE_OPTIONS, type CommunityPost, type Post, type PostKind } from "@/social/types";
+import { CREATE_OPTIONS, type Post, type PostKind } from "@/social/types";
 import { searchSocial } from "@/social/search";
 import { useFollowing } from "@/profile/following";
 import { useApp } from "@/state/AppState";
@@ -128,54 +130,12 @@ const LIKE_NOTICE =
  * contradicting itself in two taps.
  */
 /**
- * The mockup's extras, lifted off the community row.
- *
- * The title comes OUT of the body here — `feedPost` used to fold it in with
- * the prose, which is why the drawing's headline ("Morning vertical session")
- * had nowhere to be set apart from the words under it.
+ * `feedDetail` and `feedPost` — the mockup's extras and the row-shaped
+ * adapter — moved to `@/social/community` on 2026-09-13 so
+ * `screens/social/PostDetail.tsx` can read the same demo post the same way
+ * when a tapped card turns out to be one. See that module for the reasoning;
+ * this screen just imports them now rather than owning a second copy.
  */
-function feedDetail(post: CommunityPost): PostDetail {
-  return {
-    chip: POST_KIND_CHIP[post.kind],
-    title: post.title,
-    // "Mont Blanc · July 2026" — the objective, exactly as the mockup writes it.
-    subtitle: `${post.objective.mountain} · ${post.objective.when}`,
-    stats: post.stats,
-  };
-}
-
-/** The chip the mockup puts above the headline, one word per kind of post. */
-const POST_KIND_CHIP: Record<CommunityPost["kind"], string> = {
-  activity: "Activity",
-  summit: "Summit",
-  "route-report": "Conditions",
-  "looking-for-partners": "Partners",
-  milestone: "Milestone",
-  group: "Group",
-};
-
-function feedPost(post: CommunityPost, now: number): Post {
-  const words = [post.body, post.report?.note].filter(Boolean).join("\n\n");
-  return {
-    id: post.id,
-    author: {
-      id: post.author.id,
-      name: post.author.name,
-      // `Author.location` is a label somebody typed, never a coordinate — and
-      // the demo model's band ("Around Chamonix") is already exactly that.
-      location: post.author.region,
-      avatarUrl: post.author.avatar,
-      kind: "profile",
-    },
-    body: words,
-    media: post.photo ? { url: post.photo } : undefined,
-    createdAt: new Date(now - post.hoursAgo * 3_600_000).toISOString(),
-    // The demo rows carry both, and the mockup shows both. `PostCard` prints
-    // nothing for a zero, so an unengaged post stays clean.
-    likeCount: post.likes,
-    commentCount: post.comments,
-  };
-}
 
 type FeedItem = { kind: "post"; post: Post } | { kind: "promoted"; placement: PromotedPlacement };
 
@@ -207,6 +167,7 @@ function withPromotions(posts: Post[], placements: readonly PromotedPlacement[])
 /* -------------------------------------------------------------------------- */
 
 export default function Community() {
+  const navigate = useNavigate();
   /* The filter and the create request both arrive from the Social header's
      Instagram row via the URL — see `FeedMenu` and the + in Social.tsx. */
   const [params, setParams] = useSearchParams();
@@ -224,11 +185,10 @@ export default function Community() {
     next.delete("create");
     setParams(next, { replace: true });
   }, [params, setParams]);
-  const [composing, setComposing] = useState(false);
+  const [composing, setComposing] = useState<false | "post" | "story">(false);
   const [logging, setLogging] = useState(false);
   const [posting, setPosting] = useState(false);
   const [storyAt, setStoryAt] = useState<number | null>(null);
-  const [commenting, setCommenting] = useState<Post | null>(null);
   const [reporting, setReporting] = useState<string | null>(null);
   /** The reader's own likes. Session-only, on purpose — see the header. */
   const [liked, setLiked] = useState<ReadonlySet<string>>(() => new Set<string>());
@@ -389,7 +349,7 @@ export default function Community() {
           it; it is hidden only while a search is running, for the same reason
           the filter chips are. `onOpen` hands over a SLIDE index, which is
           exactly what `StoryViewer` takes: no translation, by design. */}
-      {!searching && <StoryRail onOpen={setStoryAt} />}
+      {!searching && <StoryRail onOpen={setStoryAt} onAddStory={() => setComposing("story")} />}
 
       {/*
         Two things are deliberately not at the top of this feed any more.
@@ -428,7 +388,7 @@ export default function Community() {
                   post={item.post}
                   detail={details.get(item.post.id)}
                   liked={liked.has(item.post.id)}
-                  onOpenComments={setCommenting}
+                  onOpenComments={(p) => navigate(`/social/post/${encodeURIComponent(p.id)}`)}
                   onReport={(p) => setReporting(p.id)}
                   onLike={toggleLike}
                   onShare={setSharing}
@@ -521,7 +481,7 @@ export default function Community() {
           onClose={() => setCreating(false)}
           onCompose={() => {
             setCreating(false);
-            setComposing(true);
+            setComposing("post");
           }}
           onPick={(kind) => {
             setCreating(false);
@@ -533,12 +493,12 @@ export default function Community() {
         />
       )}
       {composing && (
-        <Sheet title="New post" onClose={() => setComposing(false)}>
+        <Sheet title={composing === "story" ? "New story" : "New post"} onClose={() => setComposing(false)}>
           <div className="py-4">
             {/* The composer owns every state this can be in — no backend, signed
                 out, verified, refused — so nothing is decided for it here. It
                 closes only once the server has returned a row id. */}
-            <Composer onPosted={() => setComposing(false)} />
+            <Composer onPosted={() => setComposing(false)} startAsStory={composing === "story"} />
           </div>
         </Sheet>
       )}
@@ -555,7 +515,9 @@ export default function Community() {
         send yet — so no row of faces that would do nothing when tapped.
       */}
       {sharing && <ShareSheet post={sharing} onClose={() => setSharing(null)} />}
-      {commenting && <Comments post={commenting} onClose={() => setCommenting(null)} />}
+      {/* No comments sheet here any more — see `TappablePost` below: tapping a
+          post, or its comment control, now opens the post's own page instead
+          of a sheet layered over the feed. */}
       <ReportDialog postId={reporting} onClose={() => setReporting(null)} />
     </Screen>
   );
@@ -566,19 +528,43 @@ export default function Community() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * A post card you can tap anywhere on to open its thread.
+ * A post card you can tap anywhere on to open its own page — the X pattern.
  *
- * The owner asked for exactly this — "when you click on post it can then show
- * you comments" — and `PostCard` is not this screen's file to change, so the
- * gesture is added around it rather than inside it.
+ * The owner, handwritten note, 2026-09-13: "When you click on post see it
+ * like X.com" — clarified as meaning the Feed here specifically: "that would
+ * happen when you click on the post that shows up. same way you click a post
+ * on x." Tapping a tweet on X opens that tweet's own page, words and photo
+ * carried up top with the thread below; that page already exists in this app
+ * (`screens/social/PostDetail.tsx`, routed at `/social/post/:id`), so this
+ * wrapper's job is only to send the tap there.
+ *
+ * This USED TO open an inline `Comments` sheet layered over the feed instead
+ * — a real, earlier ruling ("when you click on post it can then show you
+ * comments"), superseded by the one above. The two are not far apart — both
+ * land you among the same words and the same replies — but a sheet stacked
+ * on the feed is not a page of its own, has no URL to share or come back to,
+ * and is not what X does. `onOpenComments` KEPT ITS NAME even though it now
+ * navigates rather than opening anything, because `PostCard` (not this
+ * screen's file to change) declares the prop under that name and calls it
+ * from its own comment button too — so the rename would have to happen
+ * there, and does not need to for the behaviour to be correct here.
+ *
+ * `PostCard` is not this screen's file to change, so the gesture is added
+ * around it rather than inside it.
  *
  * THE WRAPPER IS NOT A BUTTON, and that is deliberate rather than lazy. The
  * card already contains a like button, an options menu, sometimes a video with
  * its own controls; a `role="button"` around all of that is a control
  * containing controls, which screen readers and keyboards both read wrongly.
  * So the tap is a convenience for the finger, the card's own labelled comment
- * button stays the reachable, announced route into the same thread, and a tap
+ * button stays the reachable, announced route to the same page, and a tap
  * that lands on any control — or that ends a text selection — is left alone.
+ * A REAL POST'S OWN PHOTOGRAPH IS ALREADY A LINK to this same destination
+ * (`PostCard`'s `postHref`, wherever `postIdKind` recognises the id) — the
+ * guard below stands aside for it rather than racing it, which is also why
+ * the two routes agree: this wrapper's tap and that Link now name the same
+ * URL, where before they disagreed (one opened the page, the other opened a
+ * sheet).
  *
  * `likeCount` is 1 exactly while the reader has liked it, and absent otherwise.
  * That is not a total: it is the single like this app can vouch for, and

@@ -70,7 +70,7 @@ import { encodeProfile } from "@/profile/shareLink";
 import { useProfileCard } from "@/profile/useProfileCard";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtDistance, fmtElevation, fmtHours } from "@/lib/format";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import {
   TOTALS_ARE_SEEDED,
   useAthleteTotals,
@@ -366,7 +366,7 @@ export default function Profile() {
     })).sort((a, b) => Number(a.locked) - Number(b.locked));
   }, [recorded]);
 
-  const objective = goals.find((g) => g.status === "active");
+  const objective = usePrimaryGoal();
   const highestM = user.summits.reduce((m, s) => Math.max(m, s.elevationM ?? 0), 0);
   /*
    * THE HANDLE COMES FROM THE SERVER, and there is no longer a fallback that
@@ -1144,9 +1144,36 @@ export default function Profile() {
         {/* ---- Tabs --------------------------------------------------------
             A change of kind: everything above is the athlete, everything below
             is what they have done. The air says so, and the tab underline is
-            the one rule the section needs. */}
-        <Rise className="pt-10">
-          <div className="flex gap-6 border-b border-hairline">
+            the one rule the section needs.
+
+            STUCK AT THE TOP OF THE SCROLL, NOT CARRIED AWAY BY IT. This was a
+            row in normal flow, so the instant an athlete scrolled into their
+            own posts — which is the first thing opening a profile invites you
+            to do — the one control that switches Posts/Summits/Activities/
+            Passport/Stats was already gone, with no way back to it short of
+            scrolling all the way up past the identity block, the highlights,
+            the objective, the badges and the passport. That is this screen's
+            own navigation disappearing on its own page. `sticky top-0` pins it
+            to the top of `Screen`'s scroller — which is exactly the strip of
+            the viewport directly under the app's top bar, never over it — the
+            same pattern `Search.tsx` and `MountainPage.tsx` already use for a
+            sticky strip. `-mx-5 px-5` carries it edge to edge so the opaque
+            background has no gutter for a post to show through at the sides,
+            and `bg-obsidian/95 backdrop-blur` is the same solid-while-stuck
+            treatment those call sites use, so a card scrolling underneath does
+            not show through the row once it is pinned.
+
+            A PLAIN `div`, NOT A `Rise`, WRAPS IT — see the identical note in
+            `tracker/ActivitySelect.tsx` above its own sticky bar: `Rise`
+            animates with a `transform`, and a transformed ancestor becomes the
+            containing block a `position: sticky` descendant resolves against,
+            instead of the real scroller. Nested inside a `Rise` here, the strip
+            still scrolled away — the fix silently did nothing — because it was
+            "sticky" only within a box exactly its own height. Losing the
+            entrance rise on this one row is the honest cost of it actually
+            sticking. */}
+        <div className="pt-10">
+          <div className="sticky top-0 z-30 -mx-5 flex gap-6 border-b border-hairline bg-obsidian/95 px-5 backdrop-blur">
             {(
               [
                 ["posts", "Posts"],
@@ -1171,32 +1198,50 @@ export default function Profile() {
               </button>
             ))}
           </div>
-        </Rise>
 
-        {tab === "posts" && (
-          <PostsTab
-            posts={myPosts}
-            logs={myLogs}
-            recorded={recorded}
-            author={{
-              name: user.name,
-              region: settings.region || user.homeBase || undefined,
-              avatar: settings.avatar,
-            }}
-          />
-        )}
-        {tab === "activities" && <ActivityTab recorded={recorded} />}
-        {tab === "summits" && <SummitsTab summits={user.summits} />}
-        {tab === "stats" && (
-          <StatsTab stats={stats} achievements={achievements} recorded={recorded} />
-        )}
-        {tab === "passport" && (
-          <Rise className="pt-5">
-            <p className="text-[12.5px] leading-relaxed text-mist-dim">
-              A record you keep of your own mountaineering. ICEFALL verifies none of it.
-            </p>
-          </Rise>
-        )}
+          {/*
+            THE TAB BODY LIVES INSIDE THE SAME BOX AS THE STICKY STRIP, and that
+            is not a stylistic choice — it is what makes the strip stay stuck
+            for longer than one screenful.
+
+            A `position: sticky` element stays pinned only for as long as its
+            OWN CONTAINING BLOCK — its immediate parent, here — is still on
+            screen; the moment that parent's bottom edge scrolls past the top of
+            the scroller, the child has nowhere left to stick to and leaves with
+            it. The first version of this fix put the tab body OUTSIDE this
+            `div`, as a sibling, so the parent was exactly as tall as the strip
+            itself — one row — and the strip let go within the first few
+            pixels of scrolling, which looked identical to never having fixed
+            anything at all. Wrapping the body here makes the parent as tall as
+            whichever tab is open, so the strip now rides the full length of
+            that athlete's posts, summits, activities or stats, and only
+            releases at the true bottom of the section — exactly past "Links".
+          */}
+          {tab === "posts" && (
+            <PostsTab
+              posts={myPosts}
+              logs={myLogs}
+              recorded={recorded}
+              author={{
+                name: user.name,
+                region: settings.region || user.homeBase || undefined,
+                avatar: settings.avatar,
+              }}
+            />
+          )}
+          {tab === "activities" && <ActivityTab recorded={recorded} />}
+          {tab === "summits" && <SummitsTab summits={user.summits} />}
+          {tab === "stats" && (
+            <StatsTab stats={stats} achievements={achievements} recorded={recorded} />
+          )}
+          {tab === "passport" && (
+            <Rise className="pt-5">
+              <p className="text-[12.5px] leading-relaxed text-mist-dim">
+                A record you keep of your own mountaineering. ICEFALL verifies none of it.
+              </p>
+            </Rise>
+          )}
+        </div>
 
         {/* ---- Links -------------------------------------------------------
             ROWS ON THE PAGE, NOT A TABLE IN A BOX. Five destinations that have

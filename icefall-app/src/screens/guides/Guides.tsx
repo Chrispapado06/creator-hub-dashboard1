@@ -61,6 +61,15 @@ import { useGuideModeration } from "./guideModeration";
 import { useSearchObjective, type SearchObjective } from "./useSearchObjective";
 import { searchPeaks, type Peak } from "@/services/peaks";
 import { fmtElevation } from "@/lib/format";
+import { MONTH_SHORT, RATING_LABEL, type Month, type MonthRating } from "@/data/mountainSeason";
+import {
+  NO_SEASON_RECORDED,
+  monthRatings,
+  monthTones,
+  primarySeasonSentence,
+  seasonRecordFor,
+  toneForMonthIndex,
+} from "./season";
 
 /**
  * The guide marketplace — professionals found through the mountain.
@@ -236,6 +245,39 @@ export default function Guides() {
   );
 
   /**
+   * When guides operate on the chosen mountain — see `./season` for why this
+   * is the mountain's own sourced season and not one operator's dates, which
+   * this app does not hold.
+   */
+  const seasonRecord = useMemo(() => seasonRecordFor(selectedMountain?.id), [selectedMountain]);
+  const seasonRatings = useMemo(() => monthRatings(seasonRecord), [seasonRecord]);
+  const seasonTones = useMemo(() => monthTones(seasonRecord), [seasonRecord]);
+  const seasonSentence = useMemo(() => primarySeasonSentence(seasonRecord), [seasonRecord]);
+
+  /** "Only show in-season dates" — off by default, and off again on a new mountain. */
+  const [onlyInSeason, setOnlyInSeason] = useState(false);
+  useEffect(() => {
+    setOnlyInSeason(false);
+  }, [filters.mountain]);
+
+  const monthBadge = useCallback(
+    (_year: number, month0: number): { label: string; tone: "in" | "edge" | "off" } | null => {
+      if (!seasonRecord) return null;
+      const rating = seasonRatings[month0];
+      const tone = toneForMonthIndex(seasonTones, month0);
+      const label = rating ? RATING_LABEL[rating] : "Not recorded";
+      return { label, tone };
+    },
+    [seasonRecord, seasonRatings, seasonTones],
+  );
+
+  const dayTone = useCallback(
+    (day: Date): "in" | "edge" | "off" | null =>
+      seasonRecord ? toneForMonthIndex(seasonTones, day.getMonth()) : null,
+    [seasonRecord, seasonTones],
+  );
+
+  /**
    * Results are shown on request, not while the athlete is still describing
    * what they want.
    *
@@ -318,7 +360,23 @@ export default function Guides() {
 
             <Rise className="pt-5">
               <p className="text-[13.5px] text-snow">Select your dates</p>
+
+              {filters.mountain && (
+                <SeasonPanel
+                  mountain={filters.mountain}
+                  hasRecord={seasonRecord !== null}
+                  ratings={seasonRatings}
+                  sentence={seasonSentence}
+                  onlyInSeason={onlyInSeason}
+                  onToggle={setOnlyInSeason}
+                />
+              )}
+
               <AvailabilityCalendar
+                // Force a fresh calendar — and a fresh month on screen — when the
+                // mountain changes, rather than carrying today's month onto a
+                // peak whose season sits nowhere near it.
+                key={filters.mountain || "any"}
                 layout="month"
                 className="mt-3"
                 /* The directory view has no single guide, and the owner's
@@ -327,6 +385,9 @@ export default function Guides() {
                 seed="directory"
                 from={filters.fromIso ? parseDayKey(filters.fromIso) : new Date()}
                 to={filters.toIso ? parseDayKey(filters.toIso) : new Date()}
+                monthBadge={seasonRecord ? monthBadge : undefined}
+                dayTone={seasonRecord ? dayTone : undefined}
+                restrictOffSeason={onlyInSeason}
                 onPick={(d: Date) => {
                   const key = toDayKey(d);
                   setFilters((f) => {
@@ -685,6 +746,101 @@ function parseDayKey(key: string): Date {
 
 function toDayKey(d: Date): string {
   return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* When guides operate on the chosen mountain                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The owner's ask: "select only specific dates that guide operators actually
+ * operate on the mountain — Everest in May, 60 days minimum." No single
+ * operator's calendar lives anywhere in this app (see `./season`), so this
+ * reads the mountain's own sourced season from `@/data/mountainSeason.ts` —
+ * real hut, park and government dates — and offers it as a filter over the
+ * calendar below. FLAT, not a card: a paragraph and a row of months under a
+ * heading that already has one, the same idiom as `DatesSheet`'s note.
+ */
+function SeasonPanel({
+  mountain,
+  hasRecord,
+  ratings,
+  sentence,
+  onlyInSeason,
+  onToggle,
+}: {
+  mountain: string;
+  hasRecord: boolean;
+  ratings: (MonthRating | null)[];
+  sentence: { reason: string; sourceLabel: string; sourceUrl: string } | null;
+  onlyInSeason: boolean;
+  onToggle: (value: boolean) => void;
+}) {
+  if (!hasRecord) {
+    return <p className="mt-2.5 text-[11.5px] leading-relaxed text-mist-dim">{NO_SEASON_RECORDED}</p>;
+  }
+
+  const canRestrict = ratings.some((r) => r === "best" || r === "possible");
+
+  return (
+    <div className="mt-2.5">
+      <p className="text-[11px] text-mist-dim">When guides operate on {mountain}</p>
+
+      <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-1">
+        {ratings.map((rating, i) => {
+          const month = (i + 1) as Month;
+          return (
+            <span
+              key={month}
+              className={cn(
+                "tnum text-[10.5px]",
+                rating === "best"
+                  ? "text-summit"
+                  : rating === "possible"
+                    ? "text-mist"
+                    : "text-mist-dim/60",
+              )}
+            >
+              {MONTH_SHORT[month]}
+            </span>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-[10px] leading-relaxed text-mist-dim">
+        <span className="text-summit">In season</span> ·{" "}
+        <span className="text-mist">Edge of the season</span> ·{" "}
+        <span className="text-mist-dim/60">Shut or not recorded</span>
+      </p>
+
+      {sentence && (
+        <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+          {sentence.reason}{" "}
+          <a
+            href={sentence.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-hairline-strong underline-offset-2 hover:text-mist"
+          >
+            {sentence.sourceLabel}
+          </a>
+          . ICEFALL's own sourced season for the mountain — not any one guide's or operator's
+          calendar, which this app does not hold.
+        </p>
+      )}
+
+      {canRestrict && (
+        <label className="mt-3 flex min-h-[32px] items-center gap-2.5 text-[12px] text-mist">
+          <input
+            type="checkbox"
+            checked={onlyInSeason}
+            onChange={(e) => onToggle(e.target.checked)}
+            className="h-4 w-4 accent-azure"
+          />
+          Only show in-season dates
+        </label>
+      )}
+    </div>
+  );
 }
 
 function SelectorCard({

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type JSX } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Loader2, Trash2, ShieldCheck } from "lucide-react";
+import { CornerDownRight, Loader2, Trash2, ShieldCheck } from "lucide-react";
 import { Avatar, AzureNotice, Button, Card, Disclaimer } from "@/components/ui/primitives";
 import { Sheet } from "@/components/ui/Sheet";
 import { BACKEND_NOT_CONNECTED, supabase } from "@/backend/client";
 import { fmtRelative } from "@/lib/format";
+import { linkify } from "@/lib/linkify";
 import {
   COMMENTS_LOCAL_NOTICE,
   ME,
@@ -25,13 +26,20 @@ import { cn } from "@/lib/utils";
  * screen, and the decisions are worth stating because each one is somewhere a
  * comment thread normally invents something:
  *
- *  1. A COMMENT IS FLAT. `post_comments` is `post_id`, `author_id`, `body`,
- *     `created_at`. There is no parent column, so there are no replies here and
- *     no indentation pretending at one. (`@/social/comments` — the device-local
- *     store this file also uses — DOES carry a `parentId`. It is not rendered,
- *     for the same reason: two thread shapes for one feature is how the app
- *     ends up with two different answers to "who was this a reply to" the day
- *     the local threads sync.)
+ *  1. A COMMENT CAN BE A REPLY, ONE LEVEL DEEP. `post_comments` grew
+ *     `parent_comment_id` and `parent_author_id` in
+ *     `20260915120000_comment_replies.sql` — the owner's own ruling ("when
+ *     you reply to a comment, make it work like instagram"). A reply nests
+ *     under the top-level comment it targets and no deeper: `parent_author_id`
+ *     is set by a database trigger, not this file, and it is also the entire
+ *     mechanism `notifications/social.ts` reads to tell the original
+ *     commenter somebody replied. Before this, the table was genuinely flat —
+ *     `@/social/comments`, the device-local store this file also uses, DOES
+ *     carry a `parentId` and rendered it nowhere, because a local reply had
+ *     nobody else on the device to notify. The server side of a reply now has
+ *     somewhere real to arrive, so it is rendered here; the device thread's
+ *     own reply UI still lives in `components/domain/CommentThread.tsx`,
+ *     unchanged, because it has no second person to tell either.
  *
  *  2. NOTHING IS EDITABLE. No UPDATE grant, no UPDATE policy. So a comment is
  *     stood behind or deleted, and the only control on your own words is the
@@ -92,7 +100,7 @@ const isServerRow = (id: string) => UUID.test(id);
  * like a column — see `Composer.tsx`, which reads the same one.
  */
 const SELECT =
-  "id, post_id, body, created_at, " +
+  "id, post_id, body, created_at, parent_comment_id, " +
   "author:profiles(id, display_name, username, avatar_url, location_label, identity_verified)";
 
 interface ProfileRow {
@@ -109,6 +117,8 @@ interface CommentRow {
   post_id: string;
   body: string;
   created_at: string;
+  /** Null for an ordinary comment; the parent's id for a reply. */
+  parent_comment_id: string | null;
   /**
    * PostgREST serves a to-one embed as an object; some versions and some
    * relationship shapes hand back a one-element array instead. Both are read,
@@ -141,6 +151,7 @@ function toComment(row: CommentRow): Comment | null {
     author: toAuthor(profile),
     body: row.body,
     createdAt: row.created_at,
+    parentId: row.parent_comment_id ?? undefined,
   };
 }
 
@@ -224,8 +235,14 @@ type Thread =
 function ServerThread({ post, ended }: { post: Post; ended: boolean }) {
   const [thread, setThread] = useState<Thread>({ status: "loading" });
   const [failure, setFailure] = useState<string | null>(null);
+  /** The top-level comment the composer is about to reply to, or none. */
+  const [replyTo, setReplyTo] = useState<Comment | null>(null);
   /** Guards the state writes that follow an await after the sheet has closed. */
   const alive = useRef(true);
+  const [searchParams] = useSearchParams();
+  /** Set from a notification's `?comment=` link — see the effect below. */
+  const highlighted = searchParams.get("comment");
+  const scrolledTo = useRef<string | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -274,15 +291,41 @@ function ServerThread({ post, ended }: { post: Post; ended: boolean }) {
     };
   }, [post.id]);
 
-  async function send(body: string): Promise<boolean> {
+  /**
+   * THE DESTINATION A REPLY NOTICE PROMISES. `Notifications.tsx` links a
+   * reply to `/social/post/:id?comment=<id>` — this is the other half, run
+   * once the thread the link pointed at has actually loaded. It scrolls the
+   * named comment into view and leaves it lit for a moment, the same way a
+   * deep link into a long page usually works, rather than handing back a
+   * thread with no sign of which row the reader came here for.
+   *
+   * Guarded by `scrolledTo` rather than running on every render: the thread
+   * re-renders on every reply sent afterwards, and re-scrolling the reader
+   * away from a comment they are actively typing under would undo the tap
+   * that got them here in the first place.
+   */
+  useEffect(() => {
+    if (thread.status !== "ready" || !highlighted) return;
+    if (scrolledTo.current === highlighted) return;
+    const row = document.getElementById(`comment-${highlighted}`);
+    if (!row) return;
+    scrolledTo.current = highlighted;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [thread, highlighted]);
+
+  async function send(body: string, parentId?: string): Promise<boolean> {
     if (thread.status !== "ready" || !untyped) return false;
     setFailure(null);
 
     // `.select(...)` for the reason the composer gives: the returned row is the
     // only evidence the comment exists. A missing error is not a delivery.
+    // `parent_comment_id` is the only field this insert adds for a reply —
+    // `parent_author_id` is never sent, because the trigger that fills it
+    // (`post_comments_set_parent()`, `20260915120000_comment_replies.sql`)
+    // reads the parent row itself and overwrites anything this insert carried.
     const { data, error } = await untyped
       .from("post_comments")
-      .insert({ post_id: post.id, author_id: thread.uid, body })
+      .insert({ post_id: post.id, author_id: thread.uid, body, parent_comment_id: parentId ?? null })
       .select(SELECT)
       .single();
 
@@ -296,6 +339,7 @@ function ServerThread({ post, ended }: { post: Post; ended: boolean }) {
     }
 
     setThread((t) => (t.status === "ready" ? { ...t, comments: [...t.comments, row] } : t));
+    setReplyTo(null);
     return true;
   }
 
@@ -309,8 +353,15 @@ function ServerThread({ post, ended }: { post: Post; ended: boolean }) {
       return;
     }
     setThread((t) =>
-      t.status === "ready" ? { ...t, comments: t.comments.filter((c) => c.id !== id) } : t,
+      t.status === "ready"
+        ? { ...t, comments: t.comments.filter((c) => c.id !== id && c.parentId !== id) }
+        : t,
     );
+    // The comment being replied to just went (and its replies with it, in the
+    // line above — an orphaned reply under a gone comment reads as a lie
+    // about who it was answering). Composing a reply to nothing is not a
+    // state this box should be left in.
+    setReplyTo((r) => (r?.id === id ? null : r));
   }
 
   if (thread.status === "loading") {
@@ -362,6 +413,8 @@ function ServerThread({ post, ended }: { post: Post; ended: boolean }) {
         comments={thread.comments}
         mine={(c) => c.author.id === thread.uid}
         onDelete={(id) => void remove(id)}
+        onReply={ended ? undefined : setReplyTo}
+        highlighted={highlighted}
       />
 
       {ended ? (
@@ -370,7 +423,12 @@ function ServerThread({ post, ended }: { post: Post; ended: boolean }) {
           comments. The thread above stays readable; nothing new can be added to it.
         </Disclaimer>
       ) : (
-        <CommentBox onSubmit={send} failure={failure} />
+        <CommentBox
+          onSubmit={(body) => send(body, replyTo?.id)}
+          failure={failure}
+          replyTo={replyTo}
+          onCancelReply={() => setReplyTo(null)}
+        />
       )}
     </>
   );
@@ -431,10 +489,27 @@ function ThreadList({
   comments,
   mine,
   onDelete,
+  onReply,
+  highlighted,
 }: {
   comments: Comment[];
   mine: (c: Comment) => boolean;
   onDelete: (id: string) => void;
+  /**
+   * Present only on the server thread — a device thread has nobody else on
+   * it to reply to (`@/social/comments`'s own header). Reply is offered on a
+   * TOP-LEVEL comment only: a reply nests one level, so a reply is never
+   * itself repliable, matching the rule `post_comments_set_parent()` enforces
+   * in the database.
+   */
+  onReply?: (comment: Comment) => void;
+  /**
+   * The comment a notification's `?comment=` link pointed at, if this thread
+   * was opened from one. Lit briefly so the reader can find the exact row
+   * among everything else on the post — the "on what post" half of the
+   * owner's ask is the destination; this is the "which comment" half.
+   */
+  highlighted?: string | null;
 }) {
   if (comments.length === 0) {
     return (
@@ -448,59 +523,142 @@ function ThreadList({
     );
   }
 
+  /*
+   * ROOTS FIRST, THEIR REPLIES GATHERED UNDERNEATH — not left in `comments`'
+   * own chronological order. `comments` is sorted oldest-first by `created_at`
+   * alone, so a reply posted minutes after three other top-level comments
+   * would otherwise land between them, several rows from the thing it is
+   * answering. Instagram nests; a flat list with a reply stranded away from
+   * its parent is not that, whatever indentation it borrows.
+   */
+  const roots = comments.filter((c) => !c.parentId);
+  const repliesOf = (id: string) => comments.filter((c) => c.parentId === id);
+
   return (
-    <ul className="space-y-3">
-      {comments.map((c) => (
-        <li key={c.id} className="flex items-start gap-3">
-          {c.author.avatarUrl ? (
-            <img
-              src={c.author.avatarUrl}
-              alt=""
-              aria-hidden
-              loading="lazy"
-              className="h-8 w-8 shrink-0 rounded-full border border-hairline object-cover"
+    <ul className="space-y-3.5">
+      {roots.map((c) => {
+        const replies = repliesOf(c.id);
+        return (
+          <li key={c.id} className="space-y-2.5">
+            <ThreadRow
+              comment={c}
+              mine={mine(c)}
+              onDelete={onDelete}
+              onReply={onReply}
+              highlighted={highlighted === c.id}
             />
-          ) : (
-            <Avatar name={c.author.name} size={32} />
-          )}
-
-          <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5">
-              <span className="min-w-0 truncate text-[12.5px] text-snow">{c.author.name}</span>
-              {c.author.identityVerified && (
-                /* MIST, never azure — the three-marks ruling. Identity checked,
-                   and nothing else claimed. Same treatment as `PostCard`. */
-                <span className="shrink-0 text-mist" title="Identity verified by ICEFALL">
-                  <ShieldCheck size={12} strokeWidth={2} aria-hidden />
-                  <span className="sr-only">Identity verified by ICEFALL</span>
-                </span>
-              )}
-              <span className="tnum shrink-0 text-[11px] text-mist-dim">
-                {fmtRelative(c.createdAt)}
-              </span>
-            </p>
-            <p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed text-mist">
-              {c.body}
-            </p>
-          </div>
-
-          {/* Your own words are the only ones you can act on. There is no
-              report control on a comment: `reports` takes a post id and has no
-              column for a comment, so a button here would queue a report
-              against the wrong subject. */}
-          {mine(c) && (
-            <button
-              type="button"
-              onClick={() => onDelete(c.id)}
-              aria-label="Delete your comment"
-              className="-mr-1 shrink-0 rounded-full p-1 text-mist-dim transition-colors hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
-            >
-              <Trash2 size={14} strokeWidth={1.7} />
-            </button>
-          )}
-        </li>
-      ))}
+            {replies.length > 0 && (
+              <ul className="space-y-2.5 pl-[42px]">
+                {replies.map((r) => (
+                  <li key={r.id} className="flex items-start gap-2">
+                    <CornerDownRight
+                      size={13}
+                      strokeWidth={1.7}
+                      className="mt-3 shrink-0 text-mist-dim"
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <ThreadRow
+                        comment={r}
+                        mine={mine(r)}
+                        onDelete={onDelete}
+                        highlighted={highlighted === r.id}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
     </ul>
+  );
+}
+
+/** One comment or reply — the avatar, the byline, the body, and its controls. */
+function ThreadRow({
+  comment,
+  mine,
+  onDelete,
+  onReply,
+  highlighted,
+}: {
+  comment: Comment;
+  mine: boolean;
+  onDelete: (id: string) => void;
+  onReply?: (comment: Comment) => void;
+  highlighted?: boolean;
+}) {
+  return (
+    <div
+      id={`comment-${comment.id}`}
+      // The wash is a WAYFINDING mark, not the row's ordinary state: a
+      // reader arriving from a reply notification needs to see which row it
+      // was, and nothing else on this screen carries a background at rest.
+      // No border, for the same reason every row here has none — it is
+      // spacing and, on this one row for a few seconds, a tint.
+      className={cn(
+        "-mx-2 flex items-start gap-3 rounded-tile px-2 py-1 transition-colors duration-700",
+        highlighted ? "bg-azure/10" : "bg-transparent",
+      )}
+    >
+      {comment.author.avatarUrl ? (
+        <img
+          src={comment.author.avatarUrl}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          className="h-8 w-8 shrink-0 rounded-full border border-hairline object-cover"
+        />
+      ) : (
+        <Avatar name={comment.author.name} size={32} />
+      )}
+
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5">
+          <span className="min-w-0 truncate text-[12.5px] text-snow">{comment.author.name}</span>
+          {comment.author.identityVerified && (
+            /* MIST, never azure — the three-marks ruling. Identity checked,
+               and nothing else claimed. Same treatment as `PostCard`. */
+            <span className="shrink-0 text-mist" title="Identity verified by ICEFALL">
+              <ShieldCheck size={12} strokeWidth={2} aria-hidden />
+              <span className="sr-only">Identity verified by ICEFALL</span>
+            </span>
+          )}
+          <span className="tnum shrink-0 text-[11px] text-mist-dim">
+            {fmtRelative(comment.createdAt)}
+          </span>
+        </p>
+        <p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-relaxed text-mist">
+          {linkify(comment.body)}
+        </p>
+        {onReply && (
+          <button
+            type="button"
+            onClick={() => onReply(comment)}
+            className="mt-1.5 text-[11px] text-mist-dim transition-colors hover:text-snow"
+          >
+            Reply
+          </button>
+        )}
+      </div>
+
+      {/* Your own words are the only ones you can act on. There is no
+          report control on a comment: `reports` takes a post id and has no
+          column for a comment, so a button here would queue a report
+          against the wrong subject. */}
+      {mine && (
+        <button
+          type="button"
+          onClick={() => onDelete(comment.id)}
+          aria-label="Delete your comment"
+          className="-mr-1 shrink-0 rounded-full p-1 text-mist-dim transition-colors hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
+        >
+          <Trash2 size={14} strokeWidth={1.7} />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -514,9 +672,14 @@ function ThreadList({
 function CommentBox({
   onSubmit,
   failure,
+  replyTo,
+  onCancelReply,
 }: {
   onSubmit: (body: string) => Promise<boolean>;
   failure: string | null;
+  /** Set while composing a reply — draws the strip above the textarea. */
+  replyTo?: Comment | null;
+  onCancelReply?: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -535,12 +698,32 @@ function CommentBox({
 
   return (
     <div className="space-y-2.5">
+      {/* THE SAME STRIP `CommentThread.tsx` (the device thread) ALREADY
+          DRAWS FOR THIS — same icon, same border, same "Replying to X"
+          wording, so a reply looks like a reply whichever thread wrote it. */}
+      {replyTo && (
+        <div className="flex items-center gap-2 rounded-tile border border-hairline bg-slate/40 px-3 py-2">
+          <CornerDownRight size={12} strokeWidth={1.7} className="shrink-0 text-azure" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-[11.5px] text-mist">
+            Replying to {replyTo.author.name}
+          </span>
+          {onCancelReply && (
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className="shrink-0 text-[11px] text-mist-dim hover:text-snow"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={2}
-        placeholder="Say something"
-        aria-label="Write a comment"
+        placeholder={replyTo ? `Reply to ${replyTo.author.name}` : "Say something"}
+        aria-label={replyTo ? `Reply to ${replyTo.author.name}` : "Write a comment"}
         className="w-full resize-none rounded-tile border border-hairline bg-elevated/40 px-3.5 py-3 text-[13.5px] leading-relaxed text-snow outline-none transition-colors placeholder:text-mist-dim focus:border-azure/50"
       />
 
@@ -556,7 +739,7 @@ function CommentBox({
       {failure && <p className="text-[11.5px] leading-relaxed text-danger">{failure}</p>}
 
       <Button size="sm" className="w-full" disabled={!canSend} onClick={() => void submit()}>
-        {busy ? "Posting…" : "Post comment"}
+        {busy ? "Posting…" : replyTo ? "Post reply" : "Post comment"}
       </Button>
     </div>
   );

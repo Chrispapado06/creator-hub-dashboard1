@@ -15,6 +15,11 @@ interface ImportMetaEnv {
    * banner saying so. Unset by default — see `@/offline/offline`.
    */
   readonly VITE_ICEFALL_OFFLINE?: string;
+  /**
+   * "1" makes the app behave as if it were opened with no signal, so it boots
+   * into Mountain mode. A review switch for laptops — see `@/offline/offline`.
+   */
+  readonly VITE_ICEFALL_FORCE_MOUNTAIN?: string;
   /** Supabase project URL. Absent until a project is provisioned — see @/backend/client. */
   readonly VITE_SUPABASE_URL?: string;
   /** PUBLISHABLE (anon) key. Never the service-role key. Note the name: not ..._ANON_KEY. */

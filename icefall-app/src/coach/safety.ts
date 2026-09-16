@@ -92,6 +92,13 @@ export interface SafetyResponse {
 export const SAFETY_DISCLAIMER =
   "ICEFALL is not a medical service and cannot assess you. This is fixed safety guidance, not a diagnosis. In an emergency call your local emergency number or mountain rescue.";
 
+/**
+ * The standing line Mountain mode's Body tab shows at all times (plan §3.4,
+ * CORRECTED). It lives here so it cannot drift from the altitude cards below.
+ */
+export const ALTITUDE_STANDING_LINE =
+  "Headache, nausea or confusion? Stop going up, tell whoever you are with, and go down if it does not clear.";
+
 export const SAFETY_MESSAGES: Record<SafetyCategory, string> = {
   stroke:
     "Call emergency services now. A drooping face, a weak or dead arm, or speech that has gone slurred or muddled are stroke signs, and treatment is time-critical.\n\nNote the time the symptoms started and give that time to the operator. Keep the person sitting or lying down, give nothing to eat or drink, and do not wait to see whether it passes.\n\nICEFALL cannot help with this. Get them to a hospital.",

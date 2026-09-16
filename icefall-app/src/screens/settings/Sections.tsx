@@ -60,6 +60,7 @@ import { fmtDate } from "@/lib/format";
 import { encodeProfile, profileLink, type SharedProfile } from "@/profile/shareLink";
 import { AVATAR_PX, BANNER_H, BANNER_QUALITY, BANNER_W } from "@/lib/image";
 import { isBackendConfigured } from "@/backend/client";
+import { eraseDeviceData, exportDeviceData } from "@/device/db";
 import { PROFILE_BANNERS, bannerFor, bannerIndex } from "@/profile/banners";
 import { BADGES, badgeState } from "@/badges/model";
 import { BadgeHex } from "@/components/domain/BadgeHex";
@@ -3323,8 +3324,13 @@ function DataActivity() {
           icon={Download}
           title={done ? "Downloaded" : "Download my data"}
           detail="Every activity, goal, setting and record, as one JSON file."
-          onClick={() => {
-            const blob = new Blob([JSON.stringify(dumpLocalData(), null, 2)], {
+          onClick={async () => {
+            /* Activities, trip packs, the journal and the sync queue moved to
+               the on-device database, so `dumpLocalData()` alone is no longer
+               everything. Photos and documents are files; the export names
+               them rather than inlining megabytes of base64. */
+            const device = await exportDeviceData().catch(() => null);
+            const blob = new Blob([JSON.stringify({ ...dumpLocalData(), device }, null, 2)], {
               type: "application/json",
             });
             const url = URL.createObjectURL(blob);
@@ -3935,7 +3941,12 @@ function ManageAccount() {
                 <Button
                   variant="danger"
                   className="flex-1"
-                  onClick={() => {
+                  onClick={async () => {
+                    /* The database as well as the `icefall.` keys: activities,
+                       journal, documents and trip packs live there now, and
+                       leaving them would hand the erased account its own
+                       history back on the next launch. */
+                    await eraseDeviceData().catch(() => undefined);
                     resetAll();
                     navigate("/");
                     window.location.reload();

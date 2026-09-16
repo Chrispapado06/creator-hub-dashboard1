@@ -106,14 +106,19 @@ function ScoreChoice({
   );
 }
 
-/** Yes / no / not answered. "Not answered" stays visible — it is a real state. */
+/**
+ * Yes / no / not sure. "Not sure" stores NOT ANSWERED (null) — a real state the
+ * scorer never reads as no — so a mis-tap is never permanent (plan §3.4).
+ */
 function YesNo({
   value,
+  unsure,
   onChange,
   label,
 }: {
   value: boolean | null;
-  onChange: (v: boolean) => void;
+  unsure: boolean;
+  onChange: (v: boolean | null) => void;
   label: string;
 }) {
   return (
@@ -121,8 +126,9 @@ function YesNo({
       {[
         { v: true, text: "Yes" },
         { v: false, text: "No" },
+        { v: null, text: "Not sure" },
       ].map((o) => {
-        const on = value === o.v;
+        const on = o.v === null ? unsure && value === null : value === o.v;
         return (
           <button
             key={o.text}
@@ -176,8 +182,17 @@ export default function LakeLouiseCheck() {
   const setItem = (id: (typeof LAKE_LOUISE_ITEMS)[number], v: LikertScore) =>
     setAnswers((a) => ({ ...a, items: { ...a.items, [id]: v } }));
 
-  const setFlag = (id: RedFlagId, v: boolean) =>
+  const [unsure, setUnsure] = useState<ReadonlySet<RedFlagId>>(() => new Set());
+
+  const setFlag = (id: RedFlagId, v: boolean | null) => {
     setAnswers((a) => ({ ...a, redFlags: { ...a.redFlags, [id]: v } }));
+    setUnsure((prev) => {
+      const next = new Set(prev);
+      if (v === null) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
 
   const altitudeM = altitude.trim() === "" ? null : Number(altitude);
   const altitudeUsable = altitudeM === null || (Number.isFinite(altitudeM) && altitudeM >= -500 && altitudeM <= 9000);
@@ -237,6 +252,7 @@ export default function LakeLouiseCheck() {
                 )}
                 <YesNo
                   value={answers.redFlags[id]}
+                  unsure={unsure.has(id)}
                   onChange={(v) => setFlag(id, v)}
                   label={RED_FLAG_QUESTIONS[id]}
                 />

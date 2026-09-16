@@ -1,0 +1,223 @@
+/* ===========================================================================
+   MOUNTAIN MODE TOKENS
+
+   Driven by three attributes that `useMountainDocument()` stamps on <html>
+   while Mountain mode is mounted, and removes when it unmounts, so the rest
+   of the app never sees them:
+
+     data-mountain-theme   dark | glare
+     data-mountain-motion  reduced | full
+     data-mountain-text    large | normal
+
+   Switching re-stamps an attribute. No reload: every Mountain surface is
+   drawn from these tokens (`@theme inline` makes `bg-graphite` read
+   `var(--ice-graphite)` at runtime), and the offline map is not a Mapbox style.
+
+   `html:root[...]` rather than `:root[...]`: one element selector more than
+   index.css's `:root[data-theme="light"]`, so these win whatever order the
+   stylesheets load in.
+
+   Both themes set EVERY token the app's light block changes. Otherwise a phone
+   on the app's light theme would leak warm off-white into the dark theme.
+   `mountain.test.ts` checks that list against index.css.
+   =========================================================================== */
+
+/* ---- Emergency red: TWO tokens, because one cannot do both jobs ---------
+   The mockups' palette calls the emergency colour "vivid red" (spec §0), and
+   the single `--ice-danger` we had read as terracotta beside the vivid azure.
+   It cannot simply be brightened: white text on the fill needs a DARK red
+   (luminance <= 0.183 for 4.5:1) and red text on the near-black ground needs a
+   LIGHT one (luminance >= 0.191). Those two demands do not overlap at any
+   colour, so `--ice-danger` stays the ink that sits on the ground (outlined
+   SOS, red sentences) and `--ice-danger-fill` is the filled emergency surface
+   that carries white text: the SOS rectangle, the EMERGENCY bar, CALL 112.
+   Measured: white on #d92b1f is 4.87:1, against 4.45:1 for the old fill, and
+   it is far more saturated. Do not collapse these back into one token.
+
+   Declared unscoped as well, so the fill exists on the very first frame —
+   before `useMountainDocument()` has stamped `data-mountain-theme` — and the
+   SOS button is never drawn without a background. */
+:root {
+  --ice-danger-fill: #d92b1f;
+}
+
+/* ---- Dark: the app's dark values, restated ------------------------------ */
+html:root[data-mountain-theme="dark"] {
+  --ice-danger-fill: #d92b1f;
+  color-scheme: dark;
+  --color-white: #fff;
+  --ice-obsidian: #05070b;
+  --ice-graphite: #0e1219;
+  --ice-slate: #161b24;
+  --ice-elevated: #1e2530;
+  --ice-snow: #eaeef5;
+  /* The two quieter inks sit one step above the app's: its tertiary is 3.3:1,
+     too faint for a number read through goggles. */
+  --ice-mist: #a3abbb;
+  --ice-mist-dim: #8b94a6;
+  --ice-azure: #4b9bff;
+  --ice-azure-bright: #8fc2ff;
+  --ice-azure-deep: #2c6bd4;
+  --ice-azure-glow: rgba(75, 155, 255, 0.38);
+  --ice-start-from: #4b9bff;
+  --ice-start-to: #2c6bd4;
+  --ice-on-accent: #fff;
+  --ice-summit: #5fa86f;
+  --ice-alert: #d9a244;
+  --ice-danger: #c4553f;
+  --ice-gilt: #e5b455;
+  --ice-gilt-bright: #f6d9a0;
+  --ice-gilt-deep: #a97b33;
+  --ice-credential: #d8b26a;
+  --ice-plate-shade: #05070b;
+  --ice-hairline: rgba(255, 255, 255, 0.1);
+  --ice-hairline-strong: rgba(255, 255, 255, 0.18);
+  --ice-shadow-banner: 0 6px 18px -8px rgba(0, 0, 0, 0.9);
+  --ice-shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --ice-shadow-chip: 0 8px 24px -8px rgba(0, 0, 0, 0.8);
+  --ice-shadow-shell: 0 40px 120px -30px rgba(0, 0, 0, 0.9);
+  --ed-tint-blue: oklch(0.26 0.05 262);
+  --ed-tint-green: oklch(0.26 0.04 150);
+  --ed-tint-lavender: oklch(0.27 0.05 290);
+  --ed-tint-peach: oklch(0.28 0.04 50);
+  --ed-on-blue: oklch(0.8 0.12 255);
+  --ed-on-green: oklch(0.8 0.12 150);
+  --ed-on-lavender: oklch(0.8 0.1 290);
+  --ed-on-peach: oklch(0.82 0.12 55);
+  --ed-tile: #1e2530;
+  --ed-strong: #4b9bff;
+  --ed-on-strong: #05070b;
+}
+
+/* ---- Glare: high-contrast light for snow -------------------------------- */
+/* Pure white ground and near-black ink. Every ink is at least 7:1 on the
+   canvas and every signal colour at least 4.5:1 (tested). Structure comes from
+   darker hairlines, not fills: a pale fill disappears in sunlight. */
+html:root[data-mountain-theme="glare"] {
+  color-scheme: light;
+  /* On white, one dark red does both jobs: 7.54:1 either way. */
+  --ice-danger-fill: #a51d12;
+  --color-white: #0a0d12;
+  --ice-obsidian: #ffffff;
+  --ice-graphite: #ffffff;
+  --ice-slate: #f0f2f5;
+  --ice-elevated: #e3e7ec;
+  --ice-snow: #0a0d12;
+  --ice-mist: #2b313c;
+  --ice-mist-dim: #454c59;
+  --ice-azure: #0b47b0;
+  --ice-azure-bright: #1d5fd6;
+  --ice-azure-deep: #083a91;
+  --ice-azure-glow: rgba(11, 71, 176, 0.25);
+  --ice-start-from: #0b47b0;
+  --ice-start-to: #083a91;
+  --ice-on-accent: #ffffff;
+  --ice-summit: #1b6330;
+  --ice-alert: #7a4e00;
+  --ice-danger: #a51d12;
+  --ice-gilt: #7a4a1f;
+  --ice-gilt-bright: #6a3e18;
+  --ice-gilt-deep: #b08a60;
+  --ice-credential: #5f4c1b;
+  --ice-plate-shade: #b4b7bd;
+  --ice-hairline: rgba(10, 13, 18, 0.28);
+  --ice-hairline-strong: rgba(10, 13, 18, 0.5);
+  --ice-shadow-banner: none;
+  --ice-shadow-pop: 0 0 0 2px #0a0d12;
+  --ice-shadow-chip: none;
+  --ice-shadow-shell: none;
+  --ed-tint-blue: #dce6f8;
+  --ed-tint-green: #dcebe0;
+  --ed-tint-lavender: #e4e0f5;
+  --ed-tint-peach: #f6e2d6;
+  --ed-on-blue: #083a91;
+  --ed-on-green: #1b6330;
+  --ed-on-lavender: #3f3399;
+  --ed-on-peach: #7a3510;
+  --ed-tile: #ffffff;
+  --ed-strong: #0a0d12;
+  --ed-on-strong: #ffffff;
+}
+
+html:root[data-mountain-theme] body {
+  background-color: var(--ice-obsidian);
+  color: var(--ice-snow);
+}
+
+/* ---- Selection: the one literal colour a Mountain screen can reach ------- */
+/* A token cannot carry this one. index.css writes selection as a literal and
+   swaps it in a rule keyed on the APP's theme, which says nothing about ours:
+   a phone on the app's dark theme with Glare chosen would put a gold wash on a
+   white ground. Restated here, keyed on the Mountain theme instead.
+   index.css's other literals (the dark-island classes, the map tint, the
+   sheens) need no restating because no Mountain screen uses them, and
+   `settingsScreen.test.ts` keeps it that way. */
+
+html:root[data-mountain-theme="dark"] ::selection {
+  background: rgba(75, 155, 255, 0.34);
+  color: var(--ice-snow);
+}
+html:root[data-mountain-theme="glare"] ::selection {
+  /* A wash, not a box: dark ink stays the thing you read. */
+  background: rgba(11, 71, 176, 0.22);
+  color: var(--ice-snow);
+}
+
+/* ---- Large text ---------------------------------------------------------- */
+/* Mountain screens size text in px, which a root font-size cannot reach, so
+   the scale is a token: `text-[calc(18px*var(--mountain-text-scale))]`, or
+   the classes below. Numbers grow less, so a countdown still fits one line. */
+html:root[data-mountain-text] {
+  --mountain-text-scale: 1;
+  --mountain-number-scale: 1;
+}
+html:root[data-mountain-text="large"] {
+  --mountain-text-scale: 1.25;
+  --mountain-number-scale: 1.12;
+}
+
+/* The app's micro-label. Mountain screens use it for section headings, and it is
+   the one size on these screens large text most needs to reach. Scoped to the
+   attribute, so the rest of the app's labels are untouched.
+
+   12px, NOT THE APP'S 10px: the mockups' section labels (`TURNAROUND`,
+   `DAYLIGHT`, `SAVED ON THIS PHONE`) are small but plainly readable, and 10px
+   through goggles in daylight is not. `<SectionLabel>` in `ui.tsx` renders this
+   class, so every Mountain label moves together. */
+html:root[data-mountain-text] .section-label {
+  font-size: calc(12px * var(--mountain-text-scale, 1));
+}
+
+.m-text-label {
+  font-size: calc(14px * var(--mountain-text-scale, 1));
+  line-height: 1.3;
+}
+.m-text-body {
+  font-size: calc(18px * var(--mountain-text-scale, 1));
+  line-height: 1.35;
+}
+.m-text-title {
+  font-size: calc(24px * var(--mountain-text-scale, 1));
+  line-height: 1.2;
+}
+.m-text-number {
+  font-size: calc(48px * var(--mountain-number-scale, 1));
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.m-text-huge {
+  font-size: calc(72px * var(--mountain-number-scale, 1));
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Reduced motion ------------------------------------------------------ */
+/* Set by the phone's own preference or by battery saver. */
+html:root[data-mountain-motion="reduced"] *,
+html:root[data-mountain-motion="reduced"] *::before,
+html:root[data-mountain-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

@@ -9,8 +9,8 @@
  * ROUTING ON STATE, NOT ON HOW THEY ARRIVED. A Google sign-in and a clicked
  * email-confirmation link land here in the same condition, and a returning user
  * who already has everything lands here too. Rather than three paths, there is
- * one: `nextStepForSession()` reads the profile and says handle / onboarding /
- * home. That is why adding a fourth provider needs no new flow.
+ * one: `nextStepForSession()` reads the profile and says handle / holding /
+ * onboarding / home. That is why adding a fourth provider needs no new flow.
  *
  * WHY THERE IS A TIMEOUT. If the URL carries no session and none arrives, this
  * screen would otherwise spin forever on a page with no way out — which is what
@@ -79,6 +79,10 @@ export function AuthCallback() {
         case "handle":
           done = true;
           navigate("/auth/handle", { replace: true });
+          break;
+        case "holding":
+          done = true;
+          navigate("/auth/holding", { replace: true });
           break;
         case "onboarding":
           done = true;

@@ -165,6 +165,12 @@ export interface MountainConditions {
   bands: ElevationBand[];
   /** Set when the whole request failed; every reading will be absent. */
   error?: string;
+  /**
+   * The instant the provider's `current` block describes, epoch ms; null when
+   * the response did not say. A copy the service worker serves with no signal
+   * keeps its original stamp, so this is the forecast's real age.
+   */
+  readAt?: number | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -505,6 +511,67 @@ export function bandsFor(elevationM: number): { elevationM: number; label: strin
   return steps.slice(-4);
 }
 
+/* -------------------------------------------------------------------------- */
+/* How old a forecast may be before it is labelled, greyed or withheld         */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Mountain mode plan §3.0 and slice item 2. The service worker keeps the last
+ * forecast for three days, so with no signal a screen can be handed one that
+ * is hours or days old. It is shown with its age — never as current.
+ */
+
+export type ReadingAge = "fresh" | "aged" | "stale" | "silent";
+
+/** Wind and temperature now: with its age after 1 h, greyed after 3 h, withheld after 6 h. */
+export const CONDITIONS_AGE_MS = { aged: 1 * HOUR_MS, stale: 3 * HOUR_MS, silent: 6 * HOUR_MS } as const;
+/** The forecast ahead: with its age after 6 h, greyed after 24 h, withheld after 72 h. */
+export const FORECAST_AGE_MS = { aged: 6 * HOUR_MS, stale: 24 * HOUR_MS, silent: 72 * HOUR_MS } as const;
+
+export function ageBand(ageMs: number, bands: { aged: number; stale: number; silent: number }): ReadingAge {
+  if (ageMs > bands.silent) return "silent";
+  if (ageMs > bands.stale) return "stale";
+  if (ageMs > bands.aged) return "aged";
+  return "fresh";
+}
+
+export interface ForecastAge {
+  ageMs: number;
+  /** The `current` block: temperature, wind, visibility, freezing level now. */
+  current: ReadingAge;
+  /** The hours and days ahead. */
+  forecast: ReadingAge;
+}
+
+export function forecastAge(readAt: number | null | undefined, now: number = Date.now()): ForecastAge | null {
+  if (readAt === null || readAt === undefined || !Number.isFinite(readAt)) return null;
+  const ageMs = Math.max(0, now - readAt);
+  return { ageMs, current: ageBand(ageMs, CONDITIONS_AGE_MS), forecast: ageBand(ageMs, FORECAST_AGE_MS) };
+}
+
+function ageWords(ms: number): string {
+  const h = Math.floor(ms / HOUR_MS);
+  if (h < 48) return `${Math.max(1, h)} h`;
+  return `${Math.floor(h / 24)} days`;
+}
+
+/** What to say above the weather NOW, or null when it is fresh. */
+export function currentAgeSentence(age: ForecastAge | null): string | null {
+  if (!age || age.current === "fresh") return null;
+  if (age.current === "silent") {
+    return `The weather now is not shown: the last reading on this phone is ${ageWords(age.ageMs)} old.`;
+  }
+  return `Read ${ageWords(age.ageMs)} ago. Nothing newer has reached this phone.`;
+}
+
+/** What to say above the forecast AHEAD, or null when it is fresh. */
+export function forecastAgeSentence(age: ForecastAge | null): string | null {
+  if (!age || age.forecast === "fresh") return null;
+  if (age.forecast === "silent") return `The last forecast on this phone is ${ageWords(age.ageMs)} old, too old to show.`;
+  if (age.forecast === "stale") return `Old forecast, read ${ageWords(age.ageMs)} ago. Nothing newer has reached this phone.`;
+  return `Forecast read ${ageWords(age.ageMs)} ago.`;
+}
+
 /**
  * Conditions for a peak. Never throws — a failure returns a fully-absent
  * result carrying the reason, because a weather panel that silently shows
@@ -712,16 +779,21 @@ export async function getMountainConditions(args: {
       return series?.[i];
     };
 
-    const daily: DayForecast[] = dates.map((date, i) => ({
-      date,
-      maxC: got(at("temperature_2m_max", i)),
-      minC: got(at("temperature_2m_min", i)),
-      windMaxKph: got(at("wind_speed_10m_max", i)),
-      precipitationMm: got(at("precipitation_sum", i)),
-      snowfallCm: got(at("snowfall_sum", i)),
-      sunrise: str("sunrise", i),
-      sunset: str("sunset", i),
-    }));
+    // A kept copy can start days back; `daily[0]` is read as "today" by every
+    // screen, so days already over on the mountain are dropped, not relabelled.
+    const todayAtPeak = new Date(Date.now() + offsetMs).toISOString().slice(0, 10);
+    const daily: DayForecast[] = dates
+      .map((date, i) => ({
+        date,
+        maxC: got(at("temperature_2m_max", i)),
+        minC: got(at("temperature_2m_min", i)),
+        windMaxKph: got(at("wind_speed_10m_max", i)),
+        precipitationMm: got(at("precipitation_sum", i)),
+        snowfallCm: got(at("snowfall_sum", i)),
+        sunrise: str("sunrise", i),
+        sunset: str("sunset", i),
+      }))
+      .filter((d) => d.date >= todayAtPeak);
 
     let bands: ElevationBand[] = [];
     if (includeBands) {
@@ -759,7 +831,35 @@ export async function getMountainConditions(args: {
       bands = results;
     }
 
-    return { peakName, elevationM, current, hourly: outlook, daily, bands };
+    const stamped = typeof c.time === "string" ? instantOf(c.time) : NaN;
+    const readAt = Number.isFinite(stamped) ? stamped : null;
+    const age = forecastAge(readAt);
+    if (age?.forecast === "silent") {
+      return {
+        peakName,
+        elevationM,
+        current: { ...absent(), observedAt: current.observedAt },
+        hourly: noOutlook(hourlyHours, "request-failed"),
+        daily: [],
+        bands: [],
+        error: forecastAgeSentence(age) ?? "Forecast too old to show",
+        readAt,
+      };
+    }
+    if (age?.current === "silent") {
+      // Too old to be the weather now: withheld, never shown as current.
+      return {
+        peakName,
+        elevationM,
+        current: { ...absent(), observedAt: current.observedAt },
+        hourly: outlook,
+        daily,
+        bands: [],
+        readAt,
+      };
+    }
+
+    return { peakName, elevationM, current, hourly: outlook, daily, bands, readAt };
   } catch (err) {
     return {
       peakName,

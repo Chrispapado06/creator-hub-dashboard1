@@ -1,9 +1,19 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Check, ChevronRight, Droplets, Timer, Zap } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Check,
+  ChevronLeft,
+  Droplets,
+  MoreVertical,
+  SlidersHorizontal,
+  Timer,
+  Utensils,
+  UtensilsCrossed,
+} from "lucide-react";
 
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
-import { ProgressRing } from "@/components/ui/charts";
+import { Sheet, SheetRow } from "@/components/ui/Sheet";
+import { useCoachPlanSummary } from "@/coach/planSummary";
 import { useCoachIntel } from "@/coach/hooks";
 import {
   dailyEnergyFor,
@@ -13,50 +23,57 @@ import {
 } from "@/coach/fuelDay";
 import { estimateFromEntry, fuellingFor, type FuellingPlan } from "@/coach/nutrition";
 import { isoDate } from "@/data/mock/clock";
+import { cn } from "@/lib/utils";
 import { useFuelLocal } from "@/screens/Nutrition";
+import { useObjective } from "@/screens/coach/shell";
 import { useSettings } from "@/settings/store";
 import { useApp } from "@/state/AppState";
 import { useRecordedActivities } from "@/tracking/feed";
-import { ACCENT, Chip, CoachCard, CoachHead, Eyebrow, ON_PRIMARY, PRIMARY, TINT } from "./shell";
 
 /**
- * COACH — FUEL, to the owner's design of 2026-09-04.
+ * COACH — FUEL, rebuilt to `docs/design/coach-1to1-spec.md` Part B5 and the
+ * brief's "Fuel" section (16 Sep 2026).
  *
- * The drawing carries sample numbers — 2,400 kcal, 1,680 consumed, 120 g of
- * protein against a target — and its own brief says of them: "Sample values
- * for demo. Targets are estimates." This page draws NONE of them. Every figure
- * is the energy engine's own, run exactly as the Fuel inputs screen runs it:
+ * STRUCTURE, TOP TO BOTTOM, MATCHES THE MOCKUP: a slim "‹ Coach / Fuel / ⋮"
+ * top bar, the non-editable context line (§4.2 rule 3 — the objective chip
+ * lives on the hub ONLY, so this line is text, never a link), the "Today's
+ * fuel" card (training-day badge + the range + subline), then EITHER the
+ * empty state OR the logged state with a horizontal band — never both, and
+ * never a card the athlete cannot act on — then "Why this range?", then the
+ * existing Performance / Maintenance / Recovery selector kept verbatim (the
+ * brief's own instruction), then the real guidance and food log ICEFALL
+ * already computes, which the mockup's crop does not show but nothing asked
+ * to remove either.
  *
- *   · TARGET is `dailyEnergyFor(...).total`, which is a BAND, low to high, not
- *     one number. `fuelDay.ts` is explicit about why: the resting term alone
- *     carries ±10% for individual variation before an activity multiplier
- *     widens it further. The ring is drawn against the band's floor and says
- *     so; the legend prints the band.
- *   · CONSUMED is the sum of `estimateFromEntry` over today's food log, and
- *     it is "nothing logged" rather than 0 when the log is empty — a zero
- *     would claim the athlete ate nothing.
- *   · REMAINING is `stillToCover`, which rounds UP and never prints a zero
- *     over a shortfall, and reads "within range" once the floor is met.
- *   · THE MACRO TILES have no targets, because the engine prescribes none —
- *     `coach/nutrition.ts` sets no macro split and no body-composition goal.
- *     They show grams logged, from the same estimates, or a dash.
+ * EVERY COLOUR IS A REAL TOKEN. `bg-graphite` / `bg-slate` / `border-hairline*`
+ * / `text-snow` / `text-mist*` / `bg-azure` / `text-azure*` / `bg-summit` —
+ * the same set `ObjectiveSheet.tsx` and `AboutCoachSheet.tsx` already use.
+ * Nothing here is a hex literal, and nothing is dark-only: every one of these
+ * resolves correctly in both themes (`index.css`).
  *
- * THE TARGET SELECTOR changes the guidance — which emphasis the suggestions
- * lead with and what "Your target" says — and nothing numeric, because there
- * is no engine behind a target that would make a number true. Three targets,
- * not the drawing's four: "Weight mgmt" is a body-composition goal, and
- * `coach/nutrition.ts` records the owner's own rule that ICEFALL sets none —
- * "that single sentence is the reason the fuel screen is not another calorie
- * app". Adding it here would contradict the rule at the one place it matters.
- * If the owner wants it back, that is a product decision to take knowingly.
+ * THE RANGE IS NEVER A SINGLE NUMBER WITH A "+" — brief §4 rule 5. Two states
+ * only, both built: `band` present renders "{low} – {high} kcal" as prose;
+ * `band` absent renders the honest reason instead of a number.
  *
- * "Suggested for you" is `fuellingFor(today)` — the before / during / after
- * guidance the engine writes for the session — rather than the drawing's
- * sample meals with invented calorie counts.
+ * TONE: no red "over" state exists anywhere on this screen because
+ * `coach/fuelDay.ts`'s own `StillToCover` type has no variant to render one
+ * (see its comment — "no numeric field that can hold a negative"). Once the
+ * floor is met the copy says "within range", never a guilt line about a
+ * ceiling ICEFALL never set.
  *
- * Every input, the food-log composer and the hydration log stay on the old
- * Fuel screen at `/coach/nutrition`, reached from Adjust, Log food and
- * Nutrition preferences.
+ * WHAT THE DRAWING DOES NOT SHOW, KEPT ANYWAY: the fuelling guidance
+ * (Before/During/After), the target selector's own macro breakdown per meal
+ * (still on `/coach/nutrition`, where it always lived) and today's logged
+ * meals. These are real, already-computed data with nowhere else in the app
+ * to live — removing them would delete working features the brief never
+ * asked to cut. The daily macro-total tiles the OLD version of this screen
+ * drew ARE dropped: they leaned on "peach"/"lavender" tints that have no
+ * entry in the brief's colour table, and per-item macros already show on the
+ * food log at `/coach/nutrition`, so nothing is actually lost.
+ *
+ * Every figure below is computed exactly as `/coach/nutrition` computes it —
+ * see that screen's inputs for where `fuel.sexForEnergy`, `dailyMovement` etc.
+ * come from. This screen adds no engine of its own.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -136,18 +153,131 @@ const kcal = (n: number) => n.toLocaleString("en-GB", { maximumFractionDigits: 0
  * cost the session. A technical session carries no distance, so the engine
  * excludes it from the range ("not-costable"); that is a fact about the
  * arithmetic, and it printed as "No session" on a day that plainly had one.
- * The plan decides the chip; the engine's reason, when there is one, is said
- * in the note under the ring.
+ * The plan decides the badge; the engine's reason, when there is one, is said
+ * in the note under the range.
  */
 function dayKindChip(
   energy: DailyEnergy,
   hasSession: boolean,
   restDay: boolean,
-): { label: string; tone: "green" | "peach" | "neutral" } {
-  if (energy.session.kind === "recorded") return { label: "Training day", tone: "green" };
-  if (restDay) return { label: "Rest day", tone: "peach" };
-  if (hasSession) return { label: "Training day", tone: "green" };
-  return { label: "No session", tone: "neutral" };
+): { label: string; training: boolean } {
+  if (energy.session.kind === "recorded") return { label: "Training day", training: true };
+  if (restDay) return { label: "Rest day", training: false };
+  if (hasSession) return { label: "Training day", training: true };
+  return { label: "No session", training: false };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Small shared pieces — real tokens only                                     */
+/* -------------------------------------------------------------------------- */
+
+function Card({
+  children,
+  className,
+  pad = true,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  /** false when the card owns its own padding (e.g. a divided list). */
+  pad?: boolean;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-card border border-hairline-strong bg-graphite",
+        pad && "p-5",
+        className,
+      )}
+    >
+      {children}
+    </section>
+  );
+}
+
+function DayBadge({ training, label }: { training: boolean; label: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-medium",
+        training ? "bg-summit/15 text-summit" : "border border-hairline-strong text-mist",
+      )}
+    >
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * The horizontal band, B5 §5 — a track spanning 0 → the range's high end, the
+ * [low, high] zone tinted, and a single dot marking what was logged. Capped at
+ * 100% rather than drawn past it: there is no "over" state to draw (see the
+ * file header), so a total above the top of the range still reads as "at the
+ * top", in the same azure, never a different colour.
+ */
+function FuelBand({ low, high, logged }: { low: number; high: number; logged: number }) {
+  const clamp = (n: number) => Math.max(0, Math.min(100, n));
+  const lowPct = high > 0 ? clamp((low / high) * 100) : 0;
+  const markerPct = high > 0 ? clamp((logged / high) * 100) : 0;
+  const lowLabelPct = Math.min(Math.max(lowPct, 6), 92);
+
+  return (
+    <div className="mt-4">
+      <div className="relative h-3.5">
+        <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full bg-slate">
+          <div
+            className="absolute inset-y-0 right-0 rounded-full bg-azure/25"
+            style={{ left: `${lowPct}%` }}
+            aria-hidden="true"
+          />
+        </div>
+        <div
+          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-graphite bg-azure"
+          style={{ left: `${markerPct}%` }}
+          aria-hidden="true"
+        />
+      </div>
+      <div className="relative mt-1.5 h-4 text-[11px] tnum text-mist-dim">
+        <span
+          className="absolute"
+          style={{ left: `${lowLabelPct}%`, transform: "translateX(-50%)" }}
+        >
+          {kcal(low)}
+        </span>
+        <span className="absolute right-0">{kcal(high)}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The top bar every Coach sub-page shares in the mockup: "‹ Coach" back to
+ * the hub, the page's own centred title, a "⋮" overflow. Built local to this
+ * screen rather than in `shell.tsx` — the hub, Chat and Plan agents are
+ * touching that file concurrently today, and this bar has no state any other
+ * screen needs to share.
+ */
+function FuelTopBar({ onMore }: { onMore: () => void }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center">
+      <Link
+        to="/coach"
+        className="-ml-2 inline-flex h-11 items-center gap-0.5 justify-self-start rounded-full pl-2 pr-3 text-[15px] text-mist transition-colors hover:text-snow"
+      >
+        <ChevronLeft size={20} strokeWidth={1.7} aria-hidden="true" />
+        Coach
+      </Link>
+      <h1 className="display justify-self-center text-[18px] text-snow">Fuel</h1>
+      <button
+        type="button"
+        onClick={onMore}
+        aria-label="Fuel options"
+        className="-mr-2 grid h-11 w-11 shrink-0 place-items-center justify-self-end rounded-full text-mist transition-colors hover:text-snow"
+      >
+        <MoreVertical size={20} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -155,12 +285,17 @@ function dayKindChip(
 /* -------------------------------------------------------------------------- */
 
 export default function Fuel() {
+  const navigate = useNavigate();
   const { bodyMassKgSet } = useApp();
   const { settings } = useSettings();
   const { fuel } = useFuelLocal();
   const { today, briefing } = useCoachIntel();
   const recorded = useRecordedActivities();
   const [target, setTarget] = useFuelTarget();
+  const { goal } = useObjective();
+  const planSummary = useCoachPlanSummary();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const tipsRef = useRef<HTMLDivElement | null>(null);
 
   const todayKey = isoDate(new Date());
 
@@ -236,9 +371,6 @@ export default function Fuel() {
     };
     return {
       kcal: sum((e) => e.kcal),
-      proteinG: sum((e) => e.proteinG),
-      carbsG: sum((e) => e.carbsG),
-      fatG: sum((e) => e.fatG),
       unestimated: entries.filter((e) => e.estimate.kcal === null).length,
     };
   }, [entries]);
@@ -246,11 +378,6 @@ export default function Fuel() {
   const loggedKcal = totals?.kcal ?? null;
   const cover = stillToCover(energy.total, loggedKcal);
   const band = energy.total;
-
-  // The ring fills against the band's FLOOR — the least the day asks for —
-  // and is capped at full once the floor is met.
-  const ringValue =
-    band && loggedKcal !== null ? Math.max(0, Math.min(100, Math.round((loggedKcal / band.low) * 100))) : 0;
 
   const chip = dayKindChip(energy, Boolean(today && today.focus !== "rest"), restDay);
   // Why the range does or does not include the session — the engine's own
@@ -264,30 +391,154 @@ export default function Fuel() {
   const t = TARGETS[target];
 
   const suggestions = [
-    { label: "Before", lines: fuelling.before, icon: Timer, tint: "peach" as const },
-    { label: "During", lines: fuelling.during, icon: Droplets, tint: "blue" as const },
-    { label: "After", lines: fuelling.after, icon: Check, tint: "green" as const },
+    { label: "Before", lines: fuelling.before, icon: Timer },
+    { label: "During", lines: fuelling.during, icon: Droplets },
+    { label: "After", lines: fuelling.after, icon: Check },
   ].filter((s) => s.lines.length > 0);
+
+  const contextLine = goal
+    ? [
+        goal.name,
+        planSummary ? `Week ${planSummary.currentWeek.index}` : null,
+        planSummary?.currentPhaseLabel,
+      ]
+        .filter((p): p is string => Boolean(p))
+        .join(" · ")
+    : null;
+
+  const scrollToTips = () =>
+    tipsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <Screen padded={false}>
-      <Stagger className="px-5 pb-10 pt-6">
+      <Stagger className="px-5 pb-10 pt-4">
         <Rise>
-          <CoachHead title="Fuel" subtitle="Nutrition that supports your mountain goals." />
+          <FuelTopBar onMore={() => setMoreOpen(true)} />
+          {/* Non-editable — §4.2 rule 3. The chip that changes the objective
+              lives on the hub only; every sub-page gets this slim line. */}
+          {contextLine && <p className="mt-2 truncate text-[13px] text-mist">{contextLine}</p>}
         </Rise>
 
-        {/* ---- Your target ------------------------------------------------ */}
+        {/* ---- Today's fuel ------------------------------------------------ */}
         <Rise className="mt-5">
-          <CoachCard>
+          <Card>
             <div className="flex items-center justify-between gap-3">
-              <Eyebrow>Your target</Eyebrow>
-              <Link to="/coach/nutrition" className="inline-flex items-center gap-1 text-[15px] text-azure">
+              <div className="flex items-center gap-2">
+                <Utensils size={16} strokeWidth={1.7} className="text-mist" aria-hidden="true" />
+                <p className="text-[15px] font-medium text-snow">Today's fuel</p>
+              </div>
+              <DayBadge training={chip.training} label={chip.label} />
+            </div>
+
+            {band ? (
+              <p className="display tnum mt-4 text-[30px] leading-[1.08] text-snow">
+                {kcal(band.low)} – {kcal(band.high)} kcal
+              </p>
+            ) : (
+              <p className="mt-4 text-[15px] leading-relaxed text-mist">
+                {energy.resting.kind === "unavailable"
+                  ? energy.resting.sentence
+                  : "The range needs more inputs than ICEFALL has today."}
+              </p>
+            )}
+
+            <p className="mt-2 text-[13px] leading-relaxed text-mist">
+              {band ? (
+                "Your energy target for today."
+              ) : (
+                <>
+                  <Link to="/coach/nutrition" className="text-azure-bright">
+                    Add them
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+            {sessionNote && (
+              <p className="mt-2 text-[12.5px] leading-relaxed text-mist-dim">{sessionNote}</p>
+            )}
+          </Card>
+        </Rise>
+
+        {/* ---- Empty state, or the logged state with the band -------------- */}
+        {band && (
+          <Rise className="mt-4">
+            {loggedKcal === null ? (
+              <Card pad={false} className="flex flex-col items-center px-5 py-9 text-center">
+                <span
+                  aria-hidden="true"
+                  className="grid h-12 w-12 place-items-center rounded-full bg-slate text-mist"
+                >
+                  <UtensilsCrossed size={22} strokeWidth={1.6} />
+                </span>
+                <p className="mt-4 text-[16px] font-semibold text-snow">Nothing logged yet</p>
+                <p className="mt-1.5 max-w-[260px] text-[13.5px] leading-relaxed text-mist">
+                  Log your meals to track your energy and support your training.
+                </p>
+                <Link
+                  to="/coach/nutrition"
+                  className="mt-5 flex h-12 w-full items-center justify-center rounded-full bg-azure text-[15px] font-semibold text-[color:var(--ice-on-accent)] transition-opacity hover:opacity-90"
+                >
+                  Log food
+                </Link>
+                <button
+                  type="button"
+                  onClick={scrollToTips}
+                  className="mt-2.5 flex h-12 w-full items-center justify-center rounded-full border border-hairline-strong text-[15px] font-medium text-snow transition-colors hover:border-azure/40"
+                >
+                  View nutrition tips
+                </button>
+              </Card>
+            ) : (
+              <Card>
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="tnum text-[15px] font-semibold text-snow">
+                    {kcal(loggedKcal)} kcal logged
+                  </p>
+                  <p className="tnum text-[13px] text-mist">
+                    {cover === "inside-range"
+                      ? "Within range"
+                      : cover
+                        ? `${kcal(cover.kcal)} kcal to the low end`
+                        : ""}
+                  </p>
+                </div>
+                <FuelBand low={band.low} high={band.high} logged={loggedKcal} />
+                <p className="mt-3 text-[12.5px] leading-relaxed text-mist">
+                  From {entries.length} logged {entries.length === 1 ? "item" : "items"}.
+                  {totals && totals.unestimated > 0
+                    ? ` ${totals.unestimated} ${totals.unestimated === 1 ? "item has" : "items have"} no estimate and ${totals.unestimated === 1 ? "is" : "are"} not counted.`
+                    : ""}
+                </p>
+              </Card>
+            )}
+          </Rise>
+        )}
+
+        {/* ---- Why this range? ---------------------------------------------- */}
+        <Rise className="mt-4">
+          <Card>
+            <p className="text-[16px] font-semibold text-snow">Why this range?</p>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-mist">
+              Based on your training plan, duration and intensity for today.
+            </p>
+            <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist-dim">
+              A range, not a number: the resting term alone varies ±10% between people. Targets are
+              estimates and should be adjusted to your needs.
+            </p>
+          </Card>
+        </Rise>
+
+        {/* ---- Target selector — kept from the existing Fuel screen -------- */}
+        <Rise className="mt-4">
+          <Card>
+            <div className="flex items-center justify-between gap-3">
+              <Link to="/coach/nutrition" className="text-[13.5px] text-azure-bright">
                 Adjust
-                <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
               </Link>
             </div>
-            <h2 className="display mt-2 text-[32px] leading-[1.05] text-snow">{t.heading}</h2>
-            <p className="mt-2.5 text-[14px] leading-relaxed text-mist">{t.description}</p>
+            <h2 className="display mt-1 text-[26px] leading-[1.1] text-snow">{t.heading}</h2>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-mist">{t.description}</p>
             <div className="no-scrollbar -mx-5 mt-4 flex gap-2 overflow-x-auto px-5">
               {(Object.keys(TARGETS) as FuelTarget[]).map((id) => {
                 const on = id === target;
@@ -297,12 +548,10 @@ export default function Fuel() {
                     type="button"
                     onClick={() => setTarget(id)}
                     aria-pressed={on}
-                    className="shrink-0 rounded-full px-4 py-2.5 text-[14px] font-medium transition-colors"
-                    style={
-                      on
-                        ? { backgroundColor: PRIMARY, color: ON_PRIMARY }
-                        : { backgroundColor: TINT.blue, color: "var(--ice-snow)" }
-                    }
+                    className={cn(
+                      "shrink-0 rounded-full px-4 py-2.5 text-[14px] font-medium transition-colors",
+                      on ? "bg-azure text-[color:var(--ice-on-accent)]" : "bg-slate text-snow",
+                    )}
                   >
                     {TARGETS[id].label}
                   </button>
@@ -310,191 +559,66 @@ export default function Fuel() {
               })}
             </div>
             <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
-              A target changes the guidance below, not the range: the range is worked out from
-              your body and today's session, and ICEFALL sets no weight or body-composition goals.
+              A target changes the guidance below, not the range: the range is worked out from your
+              body and today's session, and ICEFALL sets no weight or body-composition goals.
             </p>
-          </CoachCard>
+          </Card>
         </Rise>
 
-        {/* ---- Today's target --------------------------------------------- */}
-        <Rise className="mt-4">
-          <CoachCard>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="display text-[32px] leading-none text-snow">Today's target</h2>
-                <p className="mt-1.5 truncate text-[14px] text-mist">
-                  {today
-                    ? `${today.title}${today.durationMin ? ` · ${today.durationMin} min` : ""}`
-                    : "No session in the plan today"}
-                </p>
-              </div>
-              <Chip tone={chip.tone} className="shrink-0">
-                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-                {chip.label}
-              </Chip>
-            </div>
-
-            {band ? (
-              <div className="mt-5 flex items-center gap-5">
-                <div className="relative shrink-0">
-                  <ProgressRing value={ringValue} size={124} stroke={9}>
-                    <span className="flex flex-col items-center leading-none">
-                      <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-mist">
-                        {loggedKcal === null ? "Range" : cover === "inside-range" ? "Covered" : "Remaining"}
-                      </span>
-                      <span className="display tnum mt-1.5 text-[34px] text-snow">
-                        {loggedKcal === null
-                          ? `${kcal(band.low)}+`
-                          : cover === "inside-range"
-                            ? "✓"
-                            : cover
-                              ? kcal(cover.kcal)
-                              : "—"}
-                      </span>
-                      <span className="mt-1 text-[12px] text-mist">kcal</span>
-                    </span>
-                  </ProgressRing>
-                </div>
-
-                <dl className="min-w-0 flex-1 text-[15px]">
-                  <div className="flex items-center justify-between gap-3 py-1.5">
-                    <dt className="flex items-center gap-2 text-mist">
-                      <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ACCENT.blue }} />
-                      Target
-                    </dt>
-                    <dd className="tnum font-semibold text-snow">
-                      {kcal(band.low)}–{kcal(band.high)}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 py-1.5">
-                    <dt className="flex items-center gap-2 text-mist">
-                      <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: TINT.lavender }} />
-                      Consumed
-                    </dt>
-                    <dd className={loggedKcal === null ? "text-[13px] text-mist" : "tnum font-semibold text-snow"}>
-                      {loggedKcal === null ? "Nothing logged" : kcal(loggedKcal)}
-                    </dd>
-                  </div>
-                  <div className="my-1 border-t border-hairline" />
-                  <div className="flex items-center justify-between gap-3 py-1.5">
-                    <dt className="flex items-center gap-2 text-mist">
-                      <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ACCENT.peach }} />
-                      Remaining
-                    </dt>
-                    <dd className={cover === "inside-range" || cover === null ? "text-[13px] text-mist" : "tnum font-semibold text-snow"}>
-                      {cover === null ? "—" : cover === "inside-range" ? "Within range" : kcal(cover.kcal)}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            ) : (
-              <p className="mt-4 text-[14px] leading-relaxed text-mist">
-                {energy.resting.kind === "unavailable"
-                  ? energy.resting.sentence
-                  : "The range needs more inputs than ICEFALL has today."}{" "}
-                <Link to="/coach/nutrition" className="text-azure">
-                  Add them
-                </Link>
-                .
-              </p>
-            )}
-
-            <p className="tnum mt-4 text-[13px] leading-relaxed text-mist">
-              {band && loggedKcal !== null
-                ? `${ringValue}% of the low end of today's range, from ${entries.length} logged ${entries.length === 1 ? "item" : "items"}.`
-                : band
-                  ? "Log what you eat and this fills in against the low end of the range."
-                  : ""}
-              {totals && totals.unestimated > 0
-                ? ` ${totals.unestimated} ${totals.unestimated === 1 ? "item has" : "items have"} no estimate and ${totals.unestimated === 1 ? "is" : "are"} not counted.`
-                : ""}
-            </p>
-            {sessionNote && (
-              <p className="mt-2 text-[13px] leading-relaxed text-mist">{sessionNote}</p>
-            )}
-            <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
-              A range, not a number: the resting term alone varies ±10% between people. Targets are
-              estimates and should be adjusted to your needs.
-            </p>
-          </CoachCard>
-        </Rise>
-
-        {/* ---- Macros ----------------------------------------------------- */}
-        <Rise className="mt-4">
-          <div className="grid grid-cols-3 gap-3">
-            <MacroTile label="Protein" grams={totals?.proteinG ?? null} tone="blue" />
-            <MacroTile label="Carbs" grams={totals?.carbsG ?? null} tone="peach" />
-            <MacroTile label="Fats" grams={totals?.fatG ?? null} tone="lavender" />
-          </div>
-          <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-            Grams logged today, from the same estimates. ICEFALL prescribes no macro split, so
-            there is no target to fill towards.
+        {/* ---- Suggested for you -------------------------------------------- */}
+        <div ref={tipsRef} />
+        <Rise className="mt-6">
+          <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-mist">
+            Suggested for you
+          </p>
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-mist">
+            Guidance matched to your target and today's training.
           </p>
         </Rise>
-
-        {/* ---- Suggested for you ------------------------------------------ */}
-        <Rise className="mt-7">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="display text-[32px] leading-none text-snow">Suggested for you</h2>
-              <p className="mt-2 text-[14px] leading-snug text-mist">
-                Guidance matched to your target and today's training.
-              </p>
-            </div>
-            <Link to="/coach/nutrition" className="shrink-0 text-[15px] text-azure">
-              See all
-            </Link>
-          </div>
-        </Rise>
-
-        {suggestions.length > 0 ? (
-          suggestions.map((s) => {
-            const Icon = s.icon;
-            return (
-              <Rise key={s.label} className="mt-3">
-                <CoachCard className="p-4">
-                  <div className="flex items-start gap-4">
+        <Rise className="mt-3">
+          {suggestions.length > 0 ? (
+            <Card pad={false} className="divide-y divide-hairline">
+              {suggestions.map((s) => {
+                const Icon = s.icon;
+                return (
+                  <div key={s.label} className="flex items-start gap-3.5 p-4">
                     <span
                       aria-hidden="true"
-                      className="grid h-[72px] w-[72px] shrink-0 place-items-center rounded-[16px]"
-                      style={{ backgroundColor: TINT[s.tint], color: ACCENT[s.tint] }}
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-azure/15 text-azure"
                     >
-                      <Icon size={24} strokeWidth={1.5} />
+                      <Icon size={17} strokeWidth={1.6} />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[12px] font-medium uppercase tracking-[0.16em]" style={{ color: ACCENT[s.tint] }}>
+                      <p className="text-[11.5px] font-medium uppercase tracking-[0.14em] text-azure-bright">
                         {s.label}
                       </p>
-                      <p className="mt-1 text-[16px] font-semibold leading-snug text-snow">{s.lines[0]}</p>
+                      <p className="mt-1 text-[14.5px] font-medium leading-snug text-snow">
+                        {s.lines[0]}
+                      </p>
                       {s.lines.slice(1).map((line) => (
                         <p key={line} className="mt-1 text-[13px] leading-snug text-mist">
                           {line}
                         </p>
                       ))}
-                      <Chip tone="blue" className="mt-2.5">
-                        <Zap size={12} strokeWidth={2} aria-hidden="true" />
-                        {t.emphasis}
-                      </Chip>
                     </div>
                   </div>
-                </CoachCard>
-              </Rise>
-            );
-          })
-        ) : (
-          <Rise className="mt-3">
-            <CoachCard>
-              <p className="text-[14px] leading-relaxed text-mist">{fuelling.context}</p>
-            </CoachCard>
-          </Rise>
-        )}
+                );
+              })}
+              <p className="px-4 py-3 text-[11.5px] leading-relaxed text-mist-dim">{t.emphasis}</p>
+            </Card>
+          ) : (
+            <Card>
+              <p className="text-[13.5px] leading-relaxed text-mist">{fuelling.context}</p>
+            </Card>
+          )}
+        </Rise>
 
-        {/* ---- Your meals ------------------------------------------------- */}
-        <Rise className="mt-7">
-          <CoachCard>
+        {/* ---- Your meals ---------------------------------------------------- */}
+        <Rise className="mt-6">
+          <Card>
             <div className="flex items-baseline justify-between gap-3">
-              <h2 className="display text-[30px] leading-none text-snow">Your meals</h2>
-              <Link to="/coach/nutrition" className="shrink-0 text-[15px] text-azure">
+              <p className="text-[16px] font-semibold text-snow">Your meals</p>
+              <Link to="/coach/nutrition" className="shrink-0 text-[13.5px] text-azure-bright">
                 Log food
               </Link>
             </div>
@@ -503,49 +627,33 @@ export default function Fuel() {
                 {entries.map(({ entry, estimate }) => (
                   <li key={entry.id} className="flex items-center justify-between gap-3 py-3">
                     <div className="min-w-0">
-                      <p className="truncate text-[15px] text-snow">{entry.description}</p>
+                      <p className="truncate text-[14.5px] text-snow">{entry.description}</p>
                       <p className="text-[12px] text-mist">
-                        {new Date(entry.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                        {new Date(entry.at).toLocaleTimeString("en-GB", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                         {entry.portions !== 1 ? ` · ${entry.portions} portions` : ""}
                       </p>
                     </div>
-                    <span className={estimate.kcal === null ? "text-[12px] text-mist" : "tnum text-[15px] text-snow"}>
+                    <span
+                      className={
+                        estimate.kcal === null
+                          ? "text-[12px] text-mist"
+                          : "tnum text-[14.5px] text-snow"
+                      }
+                    >
                       {estimate.kcal === null ? "No estimate" : `${kcal(estimate.kcal)} kcal`}
                     </span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-3 text-[14px] leading-relaxed text-mist">
-                Nothing logged today. Log a meal and the ring above fills against your range.
+              <p className="mt-3 text-[13.5px] leading-relaxed text-mist">
+                Nothing logged today. Log a meal and it appears here.
               </p>
             )}
-          </CoachCard>
-        </Rise>
-
-        {/* ---- Nutrition insights ----------------------------------------- */}
-        <Rise className="mt-4">
-          <CoachCard>
-            <Eyebrow>Nutrition insights</Eyebrow>
-            <p className="mt-3 text-[15px] leading-relaxed text-snow">
-              {fuelling.context}
-              {fuelling.emphasis ? ` ${fuelling.emphasis}` : ""}
-            </p>
-            <p className="mt-3 text-[12px] leading-relaxed text-mist-dim">
-              Insights are educational and based on your selected target — not medical advice.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link to="/coach/nutrition" className="rounded-full border border-hairline-strong px-4 py-2 text-[14px] text-snow">
-                Adjust target
-              </Link>
-              <Link to="/coach/nutrition" className="rounded-full border border-hairline-strong px-4 py-2 text-[14px] text-snow">
-                Log food
-              </Link>
-              <Link to="/coach/nutrition" className="rounded-full border border-hairline-strong px-4 py-2 text-[14px] text-snow">
-                Nutrition preferences
-              </Link>
-            </div>
-          </CoachCard>
+          </Card>
         </Rise>
 
         <Rise className="mt-5">
@@ -555,36 +663,29 @@ export default function Fuel() {
           </p>
         </Rise>
       </Stagger>
-    </Screen>
-  );
-}
 
-function MacroTile({
-  label,
-  grams,
-  tone,
-}: {
-  label: string;
-  grams: number | null;
-  tone: "blue" | "peach" | "lavender";
-}) {
-  return (
-    <div className="rounded-[20px] bg-graphite p-4 shadow-[0_1px_10px_rgba(20,24,40,0.05)]">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-mist">{label}</p>
-        <span
-          aria-hidden="true"
-          className="grid h-5 w-5 place-items-center rounded-full"
-          style={{ backgroundColor: TINT[tone] }}
-        >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: ACCENT[tone] }} />
-        </span>
-      </div>
-      <p className="display tnum mt-3 text-[32px] leading-none text-snow">
-        {grams === null ? "—" : Math.round(grams)}
-        {grams !== null && <span className="ml-1 text-[14px] text-mist">g</span>}
-      </p>
-      <p className="mt-2.5 text-[12px] text-mist">{grams === null ? "nothing logged" : "logged today"}</p>
-    </div>
+      {moreOpen && (
+        <Sheet title="Fuel options" onClose={() => setMoreOpen(false)}>
+          <SheetRow
+            icon={Utensils}
+            title="Log food"
+            detail="Add what you've eaten today"
+            onClick={() => {
+              setMoreOpen(false);
+              navigate("/coach/nutrition");
+            }}
+          />
+          <SheetRow
+            icon={SlidersHorizontal}
+            title="Nutrition preferences"
+            detail="Body, movement and fuelling inputs"
+            onClick={() => {
+              setMoreOpen(false);
+              navigate("/coach/nutrition");
+            }}
+          />
+        </Sheet>
+      )}
+    </Screen>
   );
 }

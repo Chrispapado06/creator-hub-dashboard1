@@ -36,6 +36,12 @@ import {
   normalise,
 } from "@/auth/username";
 import { setMyLocation, signOut } from "@/auth/account";
+import {
+  claimAmbassadorReferral,
+  peekStoredAmbassadorCode,
+  setStoredAmbassadorCode,
+  tryApplyAmbassadorCode,
+} from "@/ambassador/capture";
 
 /**
  * EVERY COUNTRY, NOT A SELECTION.
@@ -330,6 +336,56 @@ export function ChooseHandle() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The optional referral code. Entirely separate from `ready`/`busy` below —
+  // see `checkReferralCode`'s header for why this can never hold up signup.
+  const [referralCode, setReferralCode] = useState("");
+  const [referralChecking, setReferralChecking] = useState(false);
+  const [referralStatus, setReferralStatus] = useState<{
+    tone: "good" | "bad" | "muted";
+    message: string;
+  } | null>(null);
+  // The last normalised value actually sent to the backend, or null if none
+  // ever was — lets both the blur check and the pre-submit check skip a
+  // redundant call for a value that hasn't changed since it last ran.
+  const lastCheckedReferral = useRef<string | null>(null);
+
+  // Prefill with whatever `?amb=` already silently captured, so the person can
+  // SEE it was picked up rather than have it stay invisible — and can still
+  // edit or clear it.
+  useEffect(() => {
+    const stored = peekStoredAmbassadorCode();
+    if (stored) setReferralCode(stored);
+  }, []);
+
+  const checkReferralCode = useCallback(async (value: string) => {
+    const normalised = value.trim().toUpperCase();
+    if (normalised === lastCheckedReferral.current) return;
+    lastCheckedReferral.current = normalised;
+
+    if (!normalised) {
+      // Nothing to check — but keep storage in sync so a deliberately
+      // cleared field doesn't reappear via `claimAmbassadorReferral()` later.
+      setStoredAmbassadorCode("");
+      setReferralStatus(null);
+      return;
+    }
+
+    setReferralChecking(true);
+    const result = await tryApplyAmbassadorCode(normalised);
+    setReferralChecking(false);
+    // "bad"/red is reserved for the one rule this screen must be unambiguous
+    // about; every other reason (typo, expired, not yet migrated) is "muted"
+    // — a typo on an optional field is nobody's fault. Read off the typed
+    // `selfReferral` field rather than pattern-matching `message` — the
+    // message text is no longer the SQL exception's own wording (see
+    // `tryApplyAmbassadorCode`), so a regex against it would silently stop
+    // matching the moment that copy changes again.
+    setReferralStatus({
+      tone: result.ok ? "good" : result.selfReferral ? "bad" : "muted",
+      message: result.message,
+    });
+  }, []);
+
   const problem = formatProblem(username);
   const seq = useRef(0);
 
@@ -354,6 +410,12 @@ export function ChooseHandle() {
     if (problem || busy) return;
     setBusy(true);
     setError(null);
+
+    // Fire-and-forget, deliberately not awaited: an optional field must never
+    // slow this down. `checkReferralCode` no-ops if this value was already
+    // checked (e.g. at blur); if it's still in flight when we navigate away,
+    // `claimAmbassadorReferral()` below is the safety net that still applies it.
+    void checkReferralCode(referralCode);
 
     const claim = await claimUsername(username);
 
@@ -381,9 +443,18 @@ export function ChooseHandle() {
     // connection must not cost somebody the name they just won.
     if (town.trim() || country) await setMyLocation(town, country || null);
 
+    // THE ONE CALL SITE: a brand-new account always passes through this screen
+    // exactly once (see the header comment), so this is where an ambassador's
+    // `?amb=` code is redeemed against the account that now, finally, exists —
+    // both the device-local fast path AND the email-keyed durable path (for
+    // when this device's own localStorage never saw the code, e.g. it was
+    // captured on `icefall-web` and this signup happens after installing to
+    // the home screen). Tolerant of any failure; see `@/ambassador/capture`.
+    await claimAmbassadorReferral();
+
     setBusy(false);
     navigate("/onboarding", { replace: true });
-  }, [problem, busy, username, town, country, navigate]);
+  }, [problem, busy, username, town, country, navigate, referralCode, checkReferralCode]);
 
   const ready = !problem && !busy && avail.state !== "taken" && avail.state !== "reserved";
 
@@ -445,6 +516,29 @@ export function ChooseHandle() {
             ]}
             className="mt-2"
           />
+        </div>
+
+        {/* Optional — never gates `ready` or `submit()`. The wrapping div is
+            what gives this a blur handler: `Field` itself doesn't take one,
+            and React's blur event bubbles, so this fires when the input inside
+            loses focus. */}
+        <div onBlur={() => void checkReferralCode(referralCode)}>
+          <Field
+            label="Referral code"
+            value={referralCode}
+            onChange={(v) => setReferralCode(v)}
+            placeholder="e.g. ICEFALL-ABC123"
+            autoComplete="off"
+          />
+          {referralChecking ? (
+            <Line tone="muted">Checking…</Line>
+          ) : referralStatus ? (
+            <Line tone={referralStatus.tone}>{referralStatus.message}</Line>
+          ) : (
+            <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
+              Optional — got a code from an ambassador? Add it here.
+            </p>
+          )}
         </div>
 
         {error && <p className="text-[12px] leading-relaxed text-danger">{error}</p>}

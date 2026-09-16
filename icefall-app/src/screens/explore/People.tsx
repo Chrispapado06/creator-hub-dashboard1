@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
-  BadgeCheck,
   Compass,
   Globe,
   Loader2,
@@ -10,7 +9,6 @@ import {
   Mountain as MountainIcon,
   Search,
   Share2,
-  SlidersHorizontal,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -30,9 +28,7 @@ import {
   assessObjectiveReadiness,
 } from "@/coach/mountainReadiness";
 import { DISCOVERABLE_ATHLETES } from "@/network/directory";
-import { NO_GUIDES_NOTICE, allGuides, type Guide } from "@/guides/types";
-import { verificationLabel, verificationState } from "@/guides/verification";
-import { GuidePortrait } from "@/screens/guides/shared";
+import { PEOPLE_SOURCE_NOTE, usePeopleSearch, type SearchHit } from "@/search/people";
 import { matchScore, type MatchResult } from "@/network/matching";
 import { LOCATION_NOTICE, approxDistanceLabel } from "@/network/privacy";
 import {
@@ -59,76 +55,52 @@ import { useRecordedActivities } from "@/tracking/feed";
 import { haversine } from "@/tracking/filters";
 
 /**
- * The Expedition Network — the PEOPLE half of one merged page.
+ * PEOPLE — finding and following real ICEFALL climbers.
  *
- * THIS IS NOT A SCREEN ANY MORE. People and Groups were two sub-tabs asking one
- * question between them, and the owner's note for PH-08 collapsed them: "People
- * and groups need to be one page together." So this file exports `PeopleSection`
- * rather than a default screen, and the page that mounts it — the mountains you
- * want to climb, the groups forming for them, and then these people — lives in
- * `./Groups`. There is no `Screen` or `Stagger` below: the page owns both, and a
- * second scroll container inside the first is how a merged page ends up with two
- * scrollbars.
+ * THIS FILE ALSO EXPORTS `PeopleSection`, described below where it is declared.
+ * The two used to share a screen — the default export you are reading now was
+ * `PersonCard` over `allGuides()`, a guide-hiring search — and this header is
+ * about why that changed on 2026-09-13.
  *
- * WHAT THIS HALF ACTUALLY IS
+ * ── WHAT WAS HERE, AND WHY IT WAS THE WRONG THING ────────────────────────────
  *
- * ICEFALL has no directory of athletes. So this is not a partner search that
- * happens to have no results today: it is the honest rendering of a network at
- * zero members, and the empty state below is what essentially everyone sees.
+ * `Social.tsx` puts this component behind a tab literally labelled "People",
+ * reached from `/social?tab=people` — and the app's OWN global search already
+ * describes that destination as "People and groups… partners, climbers,
+ * friends" (`screens/Search.tsx`'s `PLACES` entry, unchanged by this edit).
+ * What rendered there was a guide marketplace: a search box and cards for
+ * professionals you might hire, linking to `/explore/guides/:id`. No follow, no
+ * account, nobody's page. It also duplicated a screen that already exists and
+ * is far more complete — `/explore/guides`, reachable from Explore's own Find /
+ * Expeditions / Guides tab strip, with real filters, matching and an
+ * availability calendar. Nothing about guide discovery is lost by this
+ * component no longer being a second, thinner copy of it.
  *
- * It is worth being precise about the difference from the other half of the
- * page, because the two are now inches apart. The MOUNTAINS half can be live —
- * `groups`/`group_members` are real tables and a real count of interested people
- * can come back from them. This half cannot: there is no table of discoverable
- * athletes, `DISCOVERABLE_ATHLETES` is empty by rule, and no amount of backend
- * changes that until somebody builds a directory. Do not let a working count in
- * the section above become a reason to soften the notice below.
+ * ── WHAT IS HERE NOW, AND WHAT MAKES IT REAL ─────────────────────────────────
  *
- * Nothing here invents a person. There are no sample athletes, no seeded
- * profiles, no "demo" flag. That is not fastidiousness about mock data —
- * somebody could plan an alpine objective around a partner who does not exist,
- * and this feature's own safety copy is about meeting strangers in remote
- * places. A fabricated climbing partner is a hazard, not a placeholder.
+ * `usePeopleSearch` (`@/search/people`) reads `public.profiles` — real accounts
+ * real people made, under a policy that lets any signed-in climber read any
+ * profile row. A hit routes to `/social/people/:id`, which is `AthleteProfile`:
+ * a real server-backed page with a real Follow / Unfollow pill wired to
+ * `social/follow.ts`, which writes and deletes rows in `public.follows`. Search,
+ * follow, profile — the three pieces asked for — are three existing, tested
+ * systems being connected to the one tab that was not yet pointing at them, not
+ * three new ones.
  *
- * The list machinery is built anyway — `AthleteCard`, the ranking, the filters,
- * the compatibility breakdown, the distance banding — and it runs over an empty
- * array. The day a backend exists, `DISCOVERABLE_ATHLETES` becomes a fetch and
- * nothing else on this screen changes.
+ * NOTHING IS FABRICATED TO FILL THIS SCREEN. There is no directory listing and
+ * no "suggested people" shelf: `usePeopleSearch` answers a typed name or handle
+ * only, never a browse-everyone query, which matches the stance the rest of
+ * this codebase already takes — see `network/directory.ts` and
+ * `20260902260000_public_follow_counts.sql`'s reasoning against turning a
+ * follower count into a follower LIST. A real search a climber typed is a
+ * different thing from ICEFALL handing out its whole membership, and this
+ * screen only ever does the former.
  *
- * THREE RULES THIS FILE ENFORCES RATHER THAN DESCRIBES
- *
- *   1. NOTHING IS DELIVERED. Every control a user could read as "send" carries
- *      `NETWORK_NOT_CONNECTED_NOTICE` beside it, and the filters and the
- *      widen-the-search actions say plainly that they change what WOULD be
- *      looked for rather than causing a search. An empty list that implies a
- *      search ran is a lie about the same size as a fake profile.
- *   2. ICEFALL CHECKS NOBODY. No verified badge appears anywhere — the model
- *      types `verified` as the literal `false` and this screen never reads it.
- *      Readiness and experience are self-reported or derived, labelled as such
- *      every single time they are drawn, and no copy implies vetting. The
- *      compatibility number compares two profiles and is captioned as such; it
- *      is never a safety judgement.
- *   3. LOCATION IS OFF UNTIL ASKED FOR. The device's position is never read
- *      before the athlete taps Enable, exact coordinates are never rendered,
- *      distance appears only as a wide band from `approxDistanceLabel`, and the
- *      "Near me" filter cannot even be selected until location is on.
- *
- * Deliberately absent: follower counts, likes, popularity, anything about
- * appearance, and any ranking of people. The only thing ranked here is how well
- * two plans for a mountain line up.
- */
-
-/* -------------------------------------------------------------------------- */
-/* The directory that does not exist                                           */
-/* -------------------------------------------------------------------------- */
-
-/*
- * `DISCOVERABLE_ATHLETES` moved to `@/network/directory` — imported above.
- *
- * It used to be declared here. Social search needs the same list, and the rule
- * attached to it ("must stay empty, even behind a flag, even labelled demo") is
- * far too important to exist in two copies that can drift apart. One list, one
- * rule, one place to change the day a backend returns real people.
+ * `DISCOVERABLE_ATHLETES` BELOW IS UNRELATED AND MUST STAY THAT WAY. It still
+ * backs `PeopleSection`'s dead matching code, still empty, still governed by
+ * the same rule `network/directory.ts` states in its own header. This file does
+ * not blur the two: one is a live server search over real accounts, the other
+ * is unmounted code over a constant that must never gain an entry.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -179,173 +151,167 @@ const nearRadiusKm = (location: LocationFilter) =>
 /* -------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------- */
-/* PEOPLE — the owner's 1:1 mockup, 2026-09-02                                */
+/* PEOPLE — real accounts, found by name or handle                             */
 /* -------------------------------------------------------------------------- */
+
+/** Said once, above the box, before anybody has typed a character. */
+const SEARCH_INTRO =
+  "Search by name or handle to find a real ICEFALL climber. These are accounts people made — ICEFALL has not verified anybody's identity, qualifications or experience.";
 
 /**
  * PEOPLE.
  *
- * Built to the owner's mockup: a search field with a filter button, then cards
- * with the portrait down the left, the name and credential beside it, and the
- * years of experience large on the right. Under a divider, the two lines the
- * drawing calls for — how many mountains the guide lists, and when ICEFALL last
- * read their documents.
+ * A search box over `usePeopleSearch`, and nothing else — no filter, because
+ * the server search has none to offer (name and handle only, the same
+ * restraint `network/directory.ts`'s `matchesAthlete` documents: a stranger
+ * typing a mountain name should not get a list of who will be on it in March).
+ * The five states `usePeopleSearch` can be in are five different sentences,
+ * never one blank list standing in for all of them — see `search/people.ts`'s
+ * own header for why that distinction is load-bearing here.
  *
- * ── "DOCS CHECKED 31 MAY 2026" IS REAL, AND TODAY IT SAYS SOMETHING ELSE ────
- * The mockup fills that line in with a date, and the line has genuine backing:
- * `GuideVerificationRecord.checkedAt`, resolved through `verificationState`,
- * which fails closed on an unreadable date, a missing expiry or an unnamed
- * checker. So the line renders exactly what the record supports.
- *
- * No guide in this build carries one, so every card currently reads "Not
- * checked" — and that is the correct rendering, not a gap to fill. `types.ts`
- * is explicit that nothing in this app may write `verification`; the audited
- * write path belongs to another session. Inventing a date here would put a
- * fabricated compliance check against a named person, which is the one thing
- * this file's own header forbids at length.
- *
- * ── WHY THESE PEOPLE ARE INVENTED ───────────────────────────────────────────
- * `allGuides()` is empty in an ordinary build and returns invented guides only
- * behind the demo flag. There is no such thing as a placeholder person, so at
- * zero guides this screen renders its empty state rather than seeding one.
+ * ROWS ARE STILL BORDERLESS — a bordered card per row read as five outlines
+ * competing with the names inside them the one other time this app tried it
+ * (Notifications, 2026-09-06). What changed on 2026-09-15 is that a result is
+ * no longer a single flat line: it is a small banner-style mini profile — a
+ * real photo over a flat chrome strip, the same language `AthleteProfile.tsx`
+ * uses for a full profile — plus name and `@handle · place`. Still no border
+ * and no card fill; see `PersonResultCard` below for what changed and why.
  */
 export default function People() {
   const [query, setQuery] = useState("");
-  const guides = useMemo(() => allGuides(), []);
-
-  const needle = query.trim().toLowerCase();
-  const shown = useMemo(
-    () =>
-      needle.length === 0
-        ? guides
-        : guides.filter((g) =>
-            [g.name, g.headline, g.basedIn, ...g.mountains].some((f) =>
-              f?.toLowerCase().includes(needle),
-            ),
-          ),
-    [guides, needle],
-  );
+  const trimmed = query.trim();
+  const result = usePeopleSearch(query);
 
   return (
     <Screen padded={false}>
       <Stagger className="px-5 pb-24 pt-1">
-        {/* ---- Search + filter ------------------------------------------- */}
-        <Rise className="flex items-center gap-2.5">
-          <div className="relative min-w-0 flex-1">
-            <Search
-              size={16}
-              strokeWidth={1.6}
-              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mist-dim"
-            />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search people"
-              aria-label="Search people"
-              className="h-12 w-full rounded-tile border border-hairline bg-elevated/40 pl-10 pr-4 text-[14px] text-snow outline-none transition-colors placeholder:text-mist-dim focus:border-azure/50 [&::-webkit-search-cancel-button]:hidden"
-            />
-          </div>
-          <button
-            type="button"
-            aria-label="Filter people"
-            className="grid h-12 w-12 shrink-0 place-items-center rounded-tile border border-hairline text-mist transition-colors hover:border-hairline-strong hover:text-snow"
-          >
-            <SlidersHorizontal size={17} strokeWidth={1.7} />
-          </button>
+        {/* ---- Search -------------------------------------------------- */}
+        <Rise className="relative">
+          <Search
+            size={16}
+            strokeWidth={1.6}
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mist-dim"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search people by name or handle"
+            aria-label="Search people"
+            className="h-12 w-full rounded-tile border border-hairline bg-elevated/40 pl-10 pr-4 text-[14px] text-snow outline-none transition-colors placeholder:text-mist-dim focus:border-azure/50 [&::-webkit-search-cancel-button]:hidden"
+          />
         </Rise>
 
-        {shown.length === 0 ? (
-          <Rise className="pt-5">
-            <Card>
-              <p className="text-[13px] leading-relaxed text-mist">
-                {guides.length === 0
-                  ? NO_GUIDES_NOTICE
-                  : `Nobody here matches “${query.trim()}”.`}
-              </p>
-            </Card>
+        {/* ---- What the box is for, before anybody has typed ------------ */}
+        {trimmed.length === 0 && (
+          <Rise className="pt-6">
+            <p className="text-[13px] leading-relaxed text-mist">{SEARCH_INTRO}</p>
           </Rise>
-        ) : (
-          /*
-           * EACH `Rise` IS A DIRECT CHILD OF `Stagger`, and it has to be.
-           *
-           * These were wrapped in a plain `<div className="space-y-3">` for
-           * spacing, and every card rendered at opacity 0 — present in the DOM,
-           * invisible on screen. `Stagger` drives its children through
-           * framer-motion variants, and variant inheritance only reaches DIRECT
-           * children: one ordinary div in between and the animate state never
-           * arrives, so the initial hidden state is where they stay. Spacing
-           * goes on the items instead.
-           */
-          shown.map((g) => (
-            <Rise key={g.id} className="pt-3">
-              <PersonCard guide={g} />
+        )}
+
+        {/* ---- Typed something too short to have been sent -------------- */}
+        {trimmed.length > 0 && result.state === "idle" && (
+          <Rise className="pt-6">
+            <p className="text-[13px] text-mist-dim">
+              Keep typing — a couple more letters and ICEFALL will look.
+            </p>
+          </Rise>
+        )}
+
+        {/* ---- The request is in flight ---------------------------------- */}
+        {result.state === "searching" && (
+          <Rise className="flex items-center gap-2 pt-6">
+            <Loader2 size={14} className="shrink-0 animate-spin text-mist-dim" />
+            <p className="text-[13px] text-mist-dim">Searching ICEFALL accounts…</p>
+          </Rise>
+        )}
+
+        {/* ---- Answered, and there is nothing to show: signed out, the
+            request failed, or genuinely nobody by that name — `result.message`
+            is already the sentence for whichever of those this is. */}
+        {result.hits.length === 0 &&
+          (result.state === "ready" ||
+            result.state === "signed-out" ||
+            result.state === "error") && (
+            <Rise className="pt-6">
+              <p className="text-[13px] leading-relaxed text-mist">{result.message}</p>
             </Rise>
-          ))
+          )}
+
+        {/* ---- Real accounts ---------------------------------------------- */}
+        {result.hits.map((hit) => (
+          <Rise key={hit.id}>
+            <PersonResultCard hit={hit} />
+          </Rise>
+        ))}
+        {result.hits.length > 0 && (
+          <Rise className="pt-2">
+            <p className="text-[11px] leading-relaxed text-mist-dim">{PEOPLE_SOURCE_NOTE}</p>
+          </Rise>
         )}
       </Stagger>
     </Screen>
   );
 }
 
-/** One person, drawn as the mockup draws them. */
-function PersonCard({ guide }: { guide: Guide }) {
-  const state = verificationState(guide.verification);
-
+/**
+ * One real account, found by handle or name. Opens `AthleteProfile` at
+ * `hit.to` (already `/social/people/:id`, built by `search/people.ts`), where
+ * Follow / Unfollow and Message are the real, server-backed controls — this
+ * card is not where following happens, on purpose: a second tap target inside
+ * a `Link` is a thumb hazard on a list, and `search/people.ts`'s own header
+ * works through why a search result names WHO somebody is rather than acting
+ * on them.
+ *
+ * A MINI PROFILE, NOT A PLAIN ROW — the owner's own request (2026-09-15
+ * flight notes): looking somebody up should surface a small banner-style card
+ * — a photo and a couple of real facts — rather than a bare initial.
+ *
+ *   · THE PHOTO IS REAL. `hit.imageUrl` is `profiles.avatar_url`, already
+ *     returned by the same query `search/people.ts` runs for every hit — this
+ *     is not an extra request, just a field that was being fetched and
+ *     dropped. `Search.tsx`'s `HitRow` leaves it out deliberately (a face
+ *     fetched on every keystroke of a browse list), but a name or handle
+ *     someone actually typed and is now looking at is a narrower, more
+ *     deliberate moment, and `Avatar`'s own `src` prop already exists for
+ *     exactly this — drawn over the initials, which stay as the fallback if
+ *     the image fails or nobody set one.
+ *
+ *   · THE BANNER IS FLAT CHROME, NOT A FABRICATED COVER. Copied in miniature
+ *     from `AthleteProfile.tsx`'s own `CoverBand`: `public.profiles` has no
+ *     cover-photo column, so the strip behind the avatar is the app's own
+ *     surface colour, identical on every card, and claims nothing about
+ *     anybody. The avatar overlaps its foot exactly as it does on the full
+ *     profile page — the same visual language, at list scale.
+ *
+ *   · THE FACTS ARE ONLY WHAT `search/people.ts` ACTUALLY RETURNS: name,
+ *     handle, place. "Mountains climbed" and "mutual connections" were in the
+ *     original note but are LEFT OUT ON PURPOSE — neither is real data this
+ *     card could show honestly. `social/publicProfile.ts` documents both
+ *     findings at length: there is no summit table anywhere in the schema (a
+ *     climber's own posts carry no elevation, so a summit count can only be
+ *     read out of typed prose, which the app's whole safety stance refuses),
+ *     and "connections" are cards kept in ANOTHER person's local storage —
+ *     nothing server-side ever sees them, for anybody but the account's own
+ *     owner. Printing either here would be exactly the invented fact the
+ *     owner's own instruction says to omit rather than fake.
+ */
+function PersonResultCard({ hit }: { hit: SearchHit }) {
   return (
-    <Link
-      /* `guides`, PLURAL, and encoded — the same link `Search.tsx` builds for
-         the same screen. It read `/explore/guide/${guide.id}` for as long as
-         this card has existed: singular matches no declared route, so every
-         card on this tab landed on `NotFound`, which renders OUTSIDE `AppShell`
-         and takes the bottom tab bar with it. The router warns about nothing
-         here, and a typecheck cannot see inside a template string — the only
-         thing that catches this is opening the tab. */
-      to={`/explore/guides/${encodeURIComponent(guide.id)}`}
-      className="flex overflow-hidden rounded-card border border-hairline bg-graphite transition-colors hover:border-hairline-strong"
-    >
-      {/* The portrait, down the left, full height of the card. */}
-      <div className="w-[112px] shrink-0">
-          <GuidePortrait name={guide.name} src={guide.portrait} fill />
-        </div>
-
-      <div className="min-w-0 flex-1 p-4">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5 text-[16px] leading-tight text-snow">
-              <span className="truncate">{guide.name}</span>
-              {/* The tick means a credential is CLAIMED, never that ICEFALL
-                  checked it — the line under the divider says which. */}
-              <BadgeCheck size={15} strokeWidth={1.7} className="shrink-0 text-gilt" />
-            </p>
-            {/* The credential the guide CLAIMS, in their own words. */}
-            <p className="mt-1 truncate text-[12.5px] text-gilt">
-              {guide.credentials[0]?.label ?? guide.headline}
-            </p>
-            <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-mist-dim">
-              <MapPin size={12} strokeWidth={1.6} className="shrink-0" />
-              <span className="truncate">{guide.basedIn}</span>
-            </p>
-          </div>
-
-          <div className="shrink-0 text-right">
-            <p className="tnum text-[24px] font-light leading-none text-snow">
-              {guide.yearsGuiding}
-            </p>
-            <p className="mt-1 text-[10.5px] leading-tight text-mist-dim">years exp.</p>
-          </div>
-        </div>
-
-        <div className="mt-3.5 space-y-1 border-t border-hairline pt-3">
-          <p className="tnum text-[12.5px] text-mist">
-            {guide.mountains.length}{" "}
-            {guide.mountains.length === 1 ? "mountain" : "mountains"} guided
-          </p>
-          <p className="text-[12.5px] text-mist-dim">
-            {state.kind === "checked"
-              ? `Docs checked ${fmtDate(state.checkedAt.toISOString())}`
-              : verificationLabel(state)}
-          </p>
+    <Link to={hit.to} className="block overflow-hidden rounded-tile">
+      <div className="h-9 bg-elevated/70" />
+      <div className="flex items-end gap-3 px-0.5 pb-3">
+        <Avatar
+          name={hit.title}
+          src={hit.imageUrl}
+          size={52}
+          className="-mt-6 shrink-0 border-[3px] border-obsidian"
+        />
+        <div className="min-w-0 flex-1 pb-0.5">
+          <p className="truncate text-[15px] text-snow">{hit.title}</p>
+          {hit.subtitle && (
+            <p className="mt-0.5 truncate text-[12px] text-mist-dim">{hit.subtitle}</p>
+          )}
         </div>
       </div>
     </Link>
@@ -1191,7 +1157,7 @@ function MountainWaiting({
         <EmptyAction
           icon={<Users size={15} strokeWidth={1.6} />}
           label="Create a group"
-          detail="The same form as Your groups, higher up this page."
+          detail="Start one on ICEFALL, for other people to join."
           to="/social/groups/new"
         />
         <EmptyAction

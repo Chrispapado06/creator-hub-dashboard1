@@ -787,6 +787,7 @@ export function SignIn() {
 
     setBusy(false);
     if (step === "handle") navigate("/auth/handle", { replace: true });
+    else if (step === "holding") navigate("/auth/holding", { replace: true });
     else navigate("/onboarding", { replace: true });
   }
 

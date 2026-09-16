@@ -220,13 +220,72 @@ export interface PostMedia {
   alt?: string;
 }
 
+/**
+ * THE GROUP A POST WAS WRITTEN INTO, when it was written into one.
+ *
+ * `posts.group_id` (20260912090000) plus the group's name, resolved from
+ * `groups`. OPTIONAL, AND ABSENT IS THE NORMAL CASE: every post written before
+ * that column existed, and every post written outside a group, has none — that
+ * post is the athlete's own, exactly as it has always been.
+ *
+ * `name` IS NULLABLE EVEN THOUGH `groups.name` IS NOT NULL, and it means one
+ * thing only: the embed did not come back. Nothing fills it in — a group's name
+ * is its members' to choose, and "a group" printed where a name should be is
+ * ICEFALL naming something it could not read. A card with an id and no name
+ * still knows enough to say the post is not public and to link to the group.
+ *
+ * WHAT THIS FIELD IS FOR: telling a group post apart from an ordinary one on a
+ * card that could be rendering either. It is NOT the visibility rule — that is
+ * `posts_select`, in the database, and a client that trusted this field for
+ * access would be trusting a value it received rather than a policy it passed.
+ */
+export interface PostGroupRef {
+  /** `groups.id`. */
+  id: string;
+  /** `groups.name`, or null where the embed did not resolve. Never invented. */
+  name: string | null;
+}
+
 /** One row of `public.posts`, with its author resolved. */
 export interface Post {
   id: string;
   author: Author;
+  /**
+   * Set = this post lives inside a group and only its members can read it.
+   * Absent = an ordinary post. See `PostGroupRef`.
+   *
+   * Optional so that every existing reader of this type — `PostCard`,
+   * `highlights.ts`, `fetchServerPost`, the profile grid — keeps compiling and
+   * keeps behaving identically for the posts it already handles.
+   */
+  group?: PostGroupRef;
   /** `posts.body` — NOT NULL, 1–4000 characters. A post is always words. */
   body: string;
   media?: PostMedia;
+  /**
+   * `posts.media_gallery` (20260916120000), TWO OR MORE images chosen
+   * together in one compose. ADDITIVE AND OPTIONAL: absent is the normal
+   * case and is what every post ever written — including every post that
+   * carries a single image or a single video through `media` above — still
+   * is. Set only when the column itself is a genuine non-empty array; a null
+   * or malformed column never becomes an invented one-item gallery.
+   *
+   * `media` and `gallery` ARE NOT ALTERNATIVES A READER PICKS BETWEEN AT
+   * RANDOM: a post has `media` XOR `gallery` set, never both, because the
+   * compose step that chooses more than one image writes only
+   * `media_gallery` and leaves `media_path`/`media_meta` null, and choosing
+   * exactly one image keeps writing `media_path`/`media_meta` and never
+   * touches this column. In practice 2-10 items — the database CHECK forbids
+   * more than 10 and a 1-item array simply never occurs, since a single
+   * image is `media`, not a gallery — but this type states no floor beyond
+   * `PostMedia[]` because a reader must not trust its own convention over
+   * what the column actually contains.
+   *
+   * Reuses `PostMedia` exactly: every element is a resolved, signed URL, not
+   * a raw storage path, same as `media`. Every element's `kind` is always
+   * `"image"` — video has no multi-attachment path and none is added here.
+   */
+  gallery?: PostMedia[];
   /** `posts.created_at`, ISO. */
   createdAt: string;
   /**
@@ -284,10 +343,14 @@ export function storyTimeLeft(post: Post, now = new Date()): string | null {
  * NOT the same type as `Comment` in `@/social/comments`. That one is the
  * device-local thread the app already ships — it predates the server, holds
  * replies (`parentId`) and a local "respected" mark, and lives in
- * localStorage. This one is the server's row and has neither, because
- * `post_comments` has no parent column and no update path: replies and edits
- * would each need a migration and an owner ruling. Importing both into one
- * file needs an alias, and the alias is the point — they are different things.
+ * localStorage. This one is the server's row, and — since
+ * `20260915120000_comment_replies.sql` — it holds a reply too: `parentId`,
+ * exactly one level deep, matching the rule the device-local thread already
+ * lived by. What it still does not have is an update path: `post_comments`
+ * has no grant and no policy for one, so a reply is stood behind or deleted,
+ * never edited, same as any other comment. Importing both `Comment` types
+ * into one file needs an alias, and the alias is the point — they are
+ * different things.
  */
 export interface Comment {
   id: string;
@@ -297,6 +360,13 @@ export interface Comment {
   /** 1–2000 characters, NOT NULL. */
   body: string;
   createdAt: string;
+  /**
+   * `post_comments.parent_comment_id`. Set when this row is a reply to
+   * another (top-level) comment; absent for an ordinary comment. One level
+   * only — a row this points at is never itself a reply, enforced in the
+   * database by `post_comments_set_parent()`.
+   */
+  parentId?: string;
 }
 
 /**

@@ -179,6 +179,28 @@ export function normalise(state: BudgetState | undefined, now = new Date()): Bud
 
 export const creditsLeft = (s: BudgetState) => Math.max(0, DAILY_CREDITS - s.creditsUsed);
 
+/**
+ * How long until the daily credit allowance refreshes, for the Chat composer's
+ * "resets in…" line once credits hit zero — coach-1to1-spec.md §Chat meter
+ * states. Added here rather than invented in the screen, per the same
+ * local-day rule `currentDay` already uses: the allowance turns over at LOCAL
+ * midnight, so the label must be measured against the same clock.
+ *
+ * A STATIC LABEL, NOT A TICKING CLOCK — computed once from `now` when the
+ * screen renders. The composer already re-renders on every message sent and
+ * every mount, which is the only time this line is read, so nothing here
+ * needs a `setInterval` counting seconds nobody is watching.
+ */
+export function resetLabel(now = new Date()): string {
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const totalMinutes = Math.max(1, Math.round((nextMidnight.getTime() - now.getTime()) / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `in ${minutes}m`;
+  if (minutes === 0) return `in ${hours}h`;
+  return `in ${hours}h ${minutes}m`;
+}
+
 /* -- What only ICEFALL sees ------------------------------------------------ */
 
 export const remainingMicros = (s: BudgetState) => Math.max(0, HARD_CAP_MICROS - s.spentMicros);

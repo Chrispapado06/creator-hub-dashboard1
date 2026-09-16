@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import {
   ALTITUDE_PLAUSIBLE_MAX_M,
@@ -589,6 +589,12 @@ export function useObjectiveDebriefs(): readonly ObjectiveDebriefRecord[] {
     () => current,
     () => current,
   );
+}
+
+/** The ids of every objective with a debrief on this device. */
+export function useDebriefedGoalIds(): ReadonlySet<string> {
+  const all = useObjectiveDebriefs();
+  return useMemo(() => new Set(all.map((d) => d.goalId)), [all]);
 }
 
 export function useObjectiveDebrief(

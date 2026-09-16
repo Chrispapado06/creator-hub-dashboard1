@@ -17,7 +17,7 @@ import { DifficultyDots, MountainCard } from "@/components/domain/cards";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtElevation } from "@/lib/format";
 import { sync } from "@/services/repository";
-import { useApp, type SavedObjective } from "@/state/AppState";
+import { useApp, usePrimaryGoal, type SavedObjective } from "@/state/AppState";
 import { ASSESSMENT_BANDS, assessPeak } from "@/services/peakAssessment";
 import { TIER_EYEBROW } from "@/services/peakTier";
 import { REPRESENTATIVE_CAPTION } from "@/services/peakImagery";
@@ -233,12 +233,8 @@ function ObjectivesList({
    * goal, the same one the dashboard leads with. An objective the athlete is
    * not training for gets no pill.
    */
-  const currentId = useMemo(() => {
-    const g = goals
-      .filter((x) => x.status === "active" && x.mountainId)
-      .sort((a, b) => +new Date(a.targetDate) - +new Date(b.targetDate))[0];
-    return g?.mountainId ? `curated:${g.mountainId}` : undefined;
-  }, [goals]);
+  const primaryGoal = usePrimaryGoal();
+  const currentId = primaryGoal?.mountainId ? `curated:${primaryGoal.mountainId}` : undefined;
 
   /**
    * Preparation, or nothing at all.

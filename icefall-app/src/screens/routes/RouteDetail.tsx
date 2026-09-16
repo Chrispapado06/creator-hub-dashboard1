@@ -150,14 +150,21 @@ export default function RouteDetail() {
           type="button"
           onClick={() => navigate(-1)}
           aria-label="Back"
-          // ExploreLayout's header has already cleared the notch (see the
-          // --screen-safe-top contract in chrome.tsx); adding env() here counted
-          // it twice and dropped these controls ~47px on a notched phone.
-          className="absolute left-4 top-3.5 grid h-9 w-9 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur"
+          // THEY PAY THE NOTCH THEMSELVES, same fix as TrailDetail's floating
+          // discs and for the same reason: this route is on the full-screen
+          // list now (see FULL_SCREEN_ROUTES in chrome.tsx), so there is no
+          // Explore header left above it to clear the inset. The old note
+          // here said the header did that — true when it was written, false
+          // now that the route hides its own navigation like the trail page.
+          className="absolute left-4 grid h-9 w-9 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur"
+          style={{ top: "calc(0.875rem + env(safe-area-inset-top, 0px))" }}
         >
           <ChevronLeft size={18} strokeWidth={1.8} />
         </button>
-        <div className="absolute right-4 top-3.5 flex gap-2">
+        <div
+          className="absolute right-4 flex gap-2"
+          style={{ top: "calc(0.875rem + env(safe-area-inset-top, 0px))" }}
+        >
           {/* These two silently did nothing for a while — a control that looks
               live and is not is worse than no control. */}
           <HeroCircleButton

@@ -11,10 +11,13 @@ import {
 } from "@/growth/tiers";
 import { USER } from "@/data/mock/athlete";
 import { GOALS } from "@/data/mock/goals";
-import { MOUNTAINS } from "@/data/mock/mountains";
 import { monthsAhead } from "@/data/mock/clock";
 import { LOCAL_ATHLETE_ID } from "@/network/types";
 import type { AthleteProfile, ConnectionRequest, Expedition } from "@/network/types";
+import { EMPTY_PERSISTED, normalisePersisted } from "@/state/normalisePersisted";
+/* Deleting a group saved on this phone. The same pure removal the load-time
+   demo clean-up uses, so a group and everything keyed to it go together. */
+import { dropPhoneGroups } from "@/groups/local/stateCleanup";
 import { coarsen } from "@/network/privacy";
 import type { GroupMessage, GroupStyle, GroupTrainingSession, RsvpStatus } from "@/network/groups";
 import type { ItemStatus, PackItem } from "@/services/checklist";
@@ -30,6 +33,9 @@ import { rememberSexForEnergy } from "@/coach/fuelRecord";
    store because that is where `fuelDay.dailyEnergyFor` reads them from — one
    blob comes back, each answer goes home. Neither module imports the other. */
 import { currentSettings, patchSettings, type SettingsState } from "@/settings/store";
+import { pickPrimaryGoal } from "@/objectives/primaryGoal";
+import { useDayKey } from "@/lib/useDayKey";
+import { useDebriefedGoalIds } from "@/objectives/objectiveDebrief";
 
 /**
  * Personalisation is the product's central principle, so onboarding answers,
@@ -74,20 +80,6 @@ export interface SavedObjective {
   addedAt: string;
   /** ISO date the summit was reached. Undefined until marked done. */
   summitedAt?: string;
-}
-
-/** First run starts from the curated objectives rather than an empty screen. */
-function seedObjectives(): SavedObjective[] {
-  return MOUNTAINS.map((m) => ({
-    id: `curated:${m.id}`,
-    name: m.name,
-    elevationM: m.elevationM,
-    lat: m.coords.lat,
-    lon: m.coords.lon,
-    curatedId: m.id,
-    photo: m.photo,
-    addedAt: new Date(0).toISOString(),
-  }));
 }
 
 /**
@@ -523,7 +515,8 @@ export interface OnboardingAnswers {
   birthYear?: number;
 }
 
-interface Persisted {
+/** Exported for `state/normalisePersisted.ts` and the group clean-up it runs. */
+export interface Persisted {
   onboarded: boolean;
   /**
    * ISO date this install first ran.
@@ -602,32 +595,18 @@ const EMPTY_COACH_PROFILE: CoachProfile = {
   technicalSkills: [],
 };
 
-const EMPTY: Persisted = {
-  onboarded: false,
-  customGoals: [],
-  sessionOverrides: {},
-  kudos: [],
-};
+const EMPTY: Persisted = EMPTY_PERSISTED;
 
-/** Today, as an ISO date. Stamped once, the first time the app runs. */
-const todayIso = () => new Date().toISOString();
-
+/**
+ * The storage read. Parsing, first-run seeding and the demo-group clean-up live
+ * in `normalisePersisted`, which seeds no groups in any build.
+ */
 function load(): Persisted {
   if (typeof localStorage === "undefined") return EMPTY;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...EMPTY, memberSince: todayIso(), objectives: seedObjectives() };
-    const parsed = JSON.parse(raw) as Partial<Persisted>;
-    // Existing installs predate the objectives list — seed it once.
-    return {
-      ...EMPTY,
-      ...parsed,
-      objectives: parsed.objectives ?? seedObjectives(),
-      // Installs that predate this field get stamped now rather than inheriting
-      // the fixture's rolling date. Once written it never moves again.
-      memberSince: parsed.memberSince ?? todayIso(),
-    };
+    return normalisePersisted(localStorage.getItem(STORAGE_KEY));
   } catch {
+    // The storage read itself can throw (blocked site data).
     return EMPTY;
   }
 }
@@ -1018,12 +997,39 @@ interface AppStateValue {
    */
   updateMyProfile: (patch: Partial<AthleteProfile>) => void;
   /**
-   * Expeditions THIS athlete created, on THIS device. Real, local and the only
-   * ones that exist — there is no directory of other people's trips to browse.
+   * The groups saved on THIS phone by an older build of ICEFALL.
+   *
+   * READ AND DELETE ONLY, SINCE SLICE S7. `createExpedition` and
+   * `leaveExpedition` are gone: a group is one thing now (structure plan D1), a
+   * row on the server that other people can be in, and one that could only ever
+   * hold the person holding the phone is not a kind anybody can start (D7). Each
+   * of these is offered for moving to the account, opens read-only, and can be
+   * deleted from this phone with `deleteExpedition`.
    */
   expeditions: Expedition[];
-  createExpedition: (e: Omit<Expedition, "id" | "createdAt" | "createdBy" | "memberIds">) => string;
-  leaveExpedition: (id: string) => void;
+  /**
+   * Records that this group now also exists on ICEFALL's server, under that
+   * account (structure plan §2.2, step 4).
+   *
+   * IT WRITES A FACT, NOT AN INTENTION. The caller — `groups/local/deviceMove.ts`
+   * — has already had the group back from the server and read it again; this is
+   * only where the answer is kept. Nothing here talks to a server, and nothing
+   * here may: the offline allowlist in `trip/offline.test.ts` covers this file
+   * and bans every network pattern in it.
+   *
+   * Nothing local is deleted. The notes, sessions and log stay where they were
+   * written, because they were never part of what moves.
+   */
+  markExpeditionMoved: (id: string, serverGroupId: string, byAccountId: string) => void;
+  /**
+   * Deletes a group saved on this phone, with its sessions, messages, notes,
+   * shared-checklist flag, style and checklist ticks.
+   *
+   * Everything keyed to the id goes in the same write, so nothing is left
+   * pointing at a group that is not there. It is not undoable, which is why the
+   * screen asks first.
+   */
+  deleteExpedition: (id: string) => void;
   /**
    * Messages written to other athletes. Every one is `queued` and stays queued:
    * nothing is transmitted and no reply can arrive. See `NETWORK_NOT_CONNECTED_NOTICE`.
@@ -1038,15 +1044,14 @@ interface AppStateValue {
 
   /* ---- Group planning ----------------------------------------------------
 
-     The planning surface behind a group — sessions, notes, messages and how the
-     party intends to climb. All of it is keyed to an expedition id, all of it is
-     held on this device, and none of it goes anywhere: there is no server and no
-     other members, so an RSVP tells nobody, a message reaches nobody, and
-     sharing the checklist shares with nobody. Every screen below says so before
-     the athlete writes rather than after.
+     What was written against a group saved on this phone — sessions, notes,
+     messages and how the party intended to climb. All of it is keyed to an
+     expedition id and all of it stays here: it was written privately, and the
+     people who might join that group once it moves to the account are not who
+     it was written for (structure plan D5).
 
-     A group deleted through `leaveExpedition` takes all of it with it, so
-     nothing is left keyed to a party that no longer exists.                    */
+     Deleting a group from this phone takes all of it with it, so nothing is
+     left keyed to a group that no longer exists.                              */
 
   /** Every planned session, across every group. Empty until one is planned. */
   groupSessions: GroupTrainingSession[];
@@ -1621,7 +1626,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
 
-  const todaysCheckIn = useMemo(() => checkIns.find((c) => c.date === todayKey()), [checkIns]);
+  /* Keyed on the day too, so an app left open past midnight stops reading
+     yesterday's check-in as today's. */
+  const checkInDay = useDayKey();
+  const todaysCheckIn = useMemo(
+    () => checkIns.find((c) => c.date === checkInDay),
+    [checkIns, checkInDay],
+  );
 
   /*
    * THE ONE WRITE BOUNDARY FOR A CHECK-IN, AND THEREFORE THE ONE CLOCK.
@@ -1770,69 +1781,57 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const expeditions = useMemo(() => state.expeditions ?? [], [state.expeditions]);
 
-  const createExpedition = useCallback(
-    (e: Omit<Expedition, "id" | "createdAt" | "createdBy" | "memberIds">) => {
-      const id = `expedition-${Date.now()}`;
+  /*
+   * NOTHING WRITES A NEW ONE. `createExpedition` lived here and was removed in
+   * slice S7: it made a group on one phone, with a member list that could only
+   * ever hold one person, and `/social/groups/new` is the server form now.
+   */
+
+  /*
+   * MOVED, AND ONLY EVER AFTER THE SERVER SAID SO.
+   *
+   * `movedTo` is what makes `/social/groups/expedition-…` redirect and what
+   * takes the row off "Saved on this phone", so writing it on a hopeful request
+   * would send somebody to a page that is not there. `deviceMove.ts` reads the
+   * new group back before calling this.
+   *
+   * Writing it twice is harmless: the server call is idempotent on
+   * `(created_by, origin_ref)`, so the second answer is the same id.
+   */
+  const markExpeditionMoved = useCallback(
+    (id: string, serverGroupId: string, byAccountId: string) => {
+      const groupId = serverGroupId.trim();
+      const account = byAccountId.trim();
+      if (groupId.length === 0 || account.length === 0) return;
       setState((s) => ({
         ...s,
-        expeditions: [
-          {
-            ...e,
-            id,
-            createdBy: s.myProfile?.id ?? LOCAL_ATHLETE_ID,
-            // One member, because one member is who exists. The party is never
-            // padded towards `sizeMin` to make the group look populated.
-            memberIds: [s.myProfile?.id ?? LOCAL_ATHLETE_ID],
-            createdAt: new Date().toISOString(),
-          },
-          ...(s.expeditions ?? []),
-        ],
+        expeditions: (s.expeditions ?? []).map((e) =>
+          e.id === id ? { ...e, movedTo: groupId, movedBy: account } : e,
+        ),
       }));
-      return id;
     },
     [],
   );
 
-  const leaveExpedition = useCallback((id: string) => {
-    setState((s) => {
-      const meId = s.myProfile?.id ?? LOCAL_ATHLETE_ID;
-      const next = (s.expeditions ?? [])
-        .map((e) => (e.id === id ? { ...e, memberIds: e.memberIds.filter((m) => m !== meId) } : e))
-        // An expedition nobody is on is not a group waiting for members: with
-        // no backend there is no one who could ever join it, so it is dropped
-        // rather than left as an empty record implying a trip still stands.
-        .filter((e) => e.memberIds.length > 0);
-
-      // Everything the workspace holds is keyed to a group id, so a group that
-      // has gone must take its sessions, messages, notes and preferences with
-      // it. Orphaned rows would otherwise sit in storage keyed to a party that
-      // no longer exists — and would reattach to any future id that matched.
-      const surviving = new Set(next.map((e) => e.id));
-      const gone = (s.expeditions ?? [])
-        .map((e) => e.id)
-        .filter((expeditionId) => !surviving.has(expeditionId));
-      if (gone.length === 0) return { ...s, expeditions: next };
-
-      const notes = { ...(s.groupNotes ?? {}) };
-      const shared = { ...(s.groupChecklistShared ?? {}) };
-      const styles = { ...(s.groupStyle ?? {}) };
-      for (const groupId of gone) {
-        delete notes[groupId];
-        delete shared[groupId];
-        delete styles[groupId];
-      }
-
-      return {
-        ...s,
-        expeditions: next,
-        groupSessions: (s.groupSessions ?? []).filter((x) => surviving.has(x.groupId)),
-        groupMessages: (s.groupMessages ?? []).filter((x) => surviving.has(x.groupId)),
-        groupNotes: notes,
-        groupChecklistShared: shared,
-        groupStyle: styles,
-      };
-    });
+  /*
+   * DELETE FROM THIS PHONE. One removal for the group and everything keyed to
+   * it, through the same pure module the load-time demo clean-up uses, so there
+   * is one answer to "what belongs to a group" rather than two that drift.
+   */
+  const deleteExpedition = useCallback((id: string) => {
+    setState((s) => dropPhoneGroups(s, [id]));
   }, []);
+
+  /*
+   * `leaveExpedition` STOOD HERE AND IS GONE (slice S7).
+   *
+   * It took the athlete off a group's member list and, because that list only
+   * ever held them, deleted the group. "Leave" now means leaving a group on the
+   * account, which `social/groupSpace.ts` does on the server and where the
+   * group stays and the organiser role is handed on. What is left on a phone is
+   * deleted with `deleteExpedition` above, which is the same removal by the
+   * same pure module, said in the words the screen uses: delete from this phone.
+   */
 
   const connectionRequests = useMemo(
     () => state.connectionRequests ?? [],
@@ -2317,8 +2316,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       myProfile,
       updateMyProfile,
       expeditions,
-      createExpedition,
-      leaveExpedition,
+      markExpeditionMoved,
+      deleteExpedition,
       connectionRequests,
       queueConnection,
       blockedIds,
@@ -2405,8 +2404,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       myProfile,
       updateMyProfile,
       expeditions,
-      createExpedition,
-      leaveExpedition,
+      markExpeditionMoved,
+      deleteExpedition,
       connectionRequests,
       queueConnection,
       blockedIds,
@@ -2445,14 +2444,11 @@ export function useApp() {
   return v;
 }
 
-/** The soonest active objective — drives NEXT GOAL and the coach's context. */
+/** The athlete's objective (`objectives/primaryGoal.ts`) — drives NEXT GOAL and the coach's context. */
 export function usePrimaryGoal() {
   const { goals } = useApp();
-  return useMemo(
-    () =>
-      goals
-        .filter((g) => g.status === "active")
-        .sort((a, b) => +new Date(a.targetDate) - +new Date(b.targetDate))[0],
-    [goals],
-  );
+  const day = useDayKey();
+  const debriefed = useDebriefedGoalIds();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `day` re-picks at midnight
+  return useMemo(() => pickPrimaryGoal(goals, new Date(), debriefed), [goals, day, debriefed]);
 }

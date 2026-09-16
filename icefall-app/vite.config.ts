@@ -9,29 +9,6 @@ export default defineConfig({
     react(),
     tailwindcss(),
     /**
-     * OFFLINE BUILD ONLY — remove the Google Fonts links from index.html.
-     *
-     * `src/offline/offline.ts` closes every network path inside the app, but
-     * `index.html` asks for Inter Tight and Instrument Serif before a line of
-     * app code runs, and nothing in JavaScript can call that request back. So
-     * an offline build strips the tags at build time and the app renders in the
-     * fallback stacks that `src/index.css` already declares — which is what it
-     * would have fallen back to anyway when the request failed, minus the
-     * request. Self-hosting the two woff2 files is the real fix.
-     *
-     * Reads the environment variable directly because a Vite plugin runs in
-     * Node, before `import.meta.env` exists. It is the same variable and the
-     * same build; nothing here decides offline mode for the app itself. With
-     * the variable unset this returns the HTML untouched.
-     */
-    {
-      name: "icefall-offline-strip-webfonts",
-      transformIndexHtml(html: string) {
-        if (process.env.VITE_ICEFALL_OFFLINE !== "1") return html;
-        return html.replace(/\s*<link\b[^>]*fonts\.(?:googleapis|gstatic)\.com[^>]*>/g, "");
-      },
-    },
-    /**
      * Offline support — the app has to open on a mountain with no signal.
      *
      * Workbox generates the precache manifest from the REAL build output, which
@@ -44,9 +21,19 @@ export default defineConfig({
      * authoritative. `devOptions.enabled: false` — the SW is production-only, so
      * `npm run dev` is never served through a cache. Verify with
      * `npm run build && npm run preview`, never with the dev server.
+     *
+     * `registerType: "prompt"` (Mountain mode plan §2.3): a new version
+     * downloads in the background and then WAITS, so a deploy can never delete
+     * the files an open page on a mountain still refers to. `autoUpdate` used
+     * to skip waiting and take over mid-session. `src/offline/appUpdate.ts`
+     * decides when the waiting version installs (straight away unless a trip
+     * is running today or a recording is live; capped at fourteen days).
+     * `injectRegister: "auto"` injects `registerSW.js` only until main.tsx
+     * imports that module; with neither, the waiting version simply installs
+     * the next time every ICEFALL tab is closed — still never mid-session.
      */
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       injectRegister: "auto",
       manifest: false,
       devOptions: { enabled: false },
@@ -54,6 +41,9 @@ export default defineConfig({
         // The app shell: every hashed JS/CSS chunk (so lazy routes open
         // offline), plus the peak catalogue — without it, offline search
         // collapses from thousands of peaks to the 10 curated fallbacks.
+        // Mountain mode's lazy tabs (Map, Trip) are ordinary chunks and are
+        // caught by the first pattern; `e2e/precache-offline.spec.ts` fails if
+        // any built asset, or any of public/fonts, is left out.
         globPatterns: [
           "**/*.{js,css,html,woff2}",
           "data/peaks.json",
@@ -168,29 +158,18 @@ export default defineConfig({
             // The forecast: try the network briefly, then serve the last one
             // fetched. `conditions.ts` still reports honest absence when there
             // is nothing cached — it never invents calm weather.
+            //
+            // KEPT THREE DAYS, NOT SIX HOURS (Mountain mode plan §10.4 item 2):
+            // deleting it at hour six left a trip with nothing to label from
+            // hour seven. `conditions.ts` reads the real age from the forecast's
+            // own stamp and labels, greys or withholds it (plan §3.0); past
+            // 72 h it goes silent there, and this expiry matches that.
             urlPattern: /^https:\/\/api\.open-meteo\.com\/.*/i,
             handler: "NetworkFirst",
             options: {
               cacheName: "icefall-conditions",
               networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 40, maxAgeSeconds: 6 * 3600 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: "StaleWhileRevalidate",
-            options: {
-              cacheName: "google-fonts-stylesheets",
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "google-fonts-webfonts",
-              expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 3600 },
+              expiration: { maxEntries: 40, maxAgeSeconds: 72 * 3600 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
@@ -209,6 +188,12 @@ export default defineConfig({
       },
     }),
   ],
+  define: {
+    // The app's own age (plan §3 CORRECTED): camps, rescue numbers and phrases
+    // ship inside the bundle, so the build date is their date. Read through
+    // `@/offline/appAge`, which reports null when this is absent.
+    "import.meta.env.VITE_ICEFALL_BUILT_AT": JSON.stringify(new Date().toISOString()),
+  },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CornerDownRight, Flag, MoreHorizontal, Send, Trash2 } from "lucide-react";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { fmtDate } from "@/lib/format";
+import { linkify } from "@/lib/linkify";
 import {
   COMMENTS_LOCAL_NOTICE, ME, REPORT_QUEUED_NOTICE, addComment, blockAuthor, queueReport,
   removeComment, toggleRespect, useComments, type Comment,
@@ -202,7 +203,7 @@ function CommentRow({
               {fmtDate(comment.createdAt, { day: "numeric" })}
             </span>
           </div>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-mist">{comment.body}</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-mist">{linkify(comment.body)}</p>
         </div>
         <div className="mt-1.5 flex items-center gap-4 pl-1">
           <button

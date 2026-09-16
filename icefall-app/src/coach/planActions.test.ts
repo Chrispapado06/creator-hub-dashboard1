@@ -840,12 +840,20 @@ function main() {
       gate > -1 && gate < chat.indexOf("preview(action)"),
       "the symptom gate no longer runs before a tool call is acted on",
     );
-    /* The CALL, with its semicolon — the name also appears in the comment
-       above the gate explaining why the gate has to come first, and matching
-       that would compare the gate against its own justification. */
+    /*
+     * COACH REDESIGN, 2026-09-16 (coach-1to1-spec.md §Chat "Remove the old
+     * limit… Keep one credit model"): the monthly `coachInteractionsLeft`
+     * counter and its `recordCoachInteraction()` call are gone from this
+     * screen — Chat now gates on the single daily credit budget instead. The
+     * call this used to check for no longer exists, so the equivalent check
+     * is the one real place a credit is now spent: `recordCoachSpend`, called
+     * only after `askCoach` has returned. The CALL, with its argument — the
+     * name also appears in the comment above the gate explaining why the gate
+     * has to come first, and matching that would compare the gate against its
+     * own justification. */
     ok(
-      gate > -1 && gate < chat.indexOf("recordCoachInteraction();"),
-      "the symptom gate no longer runs before a free conversation is spent",
+      gate > -1 && gate < chat.indexOf("recordCoachSpend(spentMicros)"),
+      "the symptom gate no longer runs before a credit is spent",
     );
   }
 

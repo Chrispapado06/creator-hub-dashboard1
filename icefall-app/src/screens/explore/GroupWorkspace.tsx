@@ -1,94 +1,58 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { REFERENCE_NO_KIT_LIST, REFERENCE_NO_READINESS } from "@/services/peakTier";
-import { DateField } from "@/components/ui/DateField";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Link, Navigate, useParams } from "react-router-dom";
 import {
-  CalendarPlus,
   CalendarRange,
-  ChevronRight,
-  CloudOff,
+  Footprints,
   Globe,
   Hourglass,
   ImageOff,
   ImagePlus,
-  KeyRound,
-  Link2Off,
   Lock,
+  MapPin,
   MessageSquare,
   Mountain as MountainIcon,
-  NotebookPen,
   RotateCw,
   SearchX,
   Send,
   Share2,
-  ShieldAlert,
   Trash2,
-  Unplug,
   UserPlus,
   Users,
   X,
-  type LucideIcon,
 } from "lucide-react";
 
-import { Avatar, Badge, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/primitives";
+import { Avatar, Badge, Button, Card, SectionLabel } from "@/components/ui/primitives";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { FactorBar, ScoreRing } from "@/components/coach/CoachUI";
-import { QualifierBadge, UnavailableState, type DataQualifier } from "@/components/coach/DataState";
-import { OperatorCard } from "@/components/domain/OperatorCard";
-import { MountainThumb, useMountainImage } from "@/components/domain/MountainImage";
+import { Sheet } from "@/components/ui/Sheet";
+import {
+  AbsenceMark,
+  AvatarStack,
+  GroupAction,
+  GroupActionRow,
+  GroupCover,
+  MetaRow,
+  SpaceAbsence,
+  type MetaItem,
+  type StackPerson,
+} from "./groupChrome";
+import { GroupFeedSection } from "./GroupFeedSection";
+import { EXAMPLE_GROUP_NOTE, isExampleGroupId } from "@/groups/demo/exampleSource";
+import { MountainThumb } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtElevation, fmtRelative } from "@/lib/format";
-import { isKnown, known, unavailable, type Score } from "@/coach/types";
-import {
-  OBJECTIVE_READINESS_DISCLAIMER,
-  assessObjectiveReadiness,
-} from "@/coach/mountainReadiness";
-import {
-  CHECKLIST_DISCLAIMER,
-  STATUS_LABEL,
-  completion,
-  generateChecklist,
-  type ChecklistItem,
-  type ItemStatus,
-} from "@/services/checklist";
-import { DEMO_NOTICE, OPERATOR_DISCLAIMER, operatorsFor } from "@/services/operators";
-import { operatorSearchUrl } from "@/services/expeditionAccess";
-import { useRecordedActivities } from "@/tracking/feed";
+import { linkify } from "@/lib/linkify";
 import { useApp } from "@/state/AppState";
+/* A phone group that has moved, and the read-only screen for one that has not. */
+import { hasMoved } from "@/groups/local/phoneGroups";
+import { DeviceGroupSummary } from "@/screens/groups/local/DeviceGroupSummary";
 import { SAFETY_REMINDER } from "@/network/privacy";
-import {
-  EXPERIENCE_LABELS,
-  LOCAL_ATHLETE_ID,
-  LOOKING_FOR_LABELS,
-  NETWORK_NOT_CONNECTED_NOTICE,
-  experienceFromAppLevel,
-  type Expedition,
-} from "@/network/types";
-import {
-  CHECKLIST_SHARING_NOTICE,
-  GROUP_CHAT_NOTICE,
-  GROUP_READINESS_NOTE,
-  GROUP_STYLE_LABELS,
-  RSVP_LABELS,
-  SHARE_LINK_UNAVAILABLE,
-  formatDay,
-  formatWindow,
-  groupSummary,
-  meanReadiness,
-  parseDay,
-  todayKey,
-  windowCountdown,
-  type GroupStyle,
-  type GroupTrainingSession,
-  type RsvpStatus,
-} from "@/network/groups";
 import {
   ACCEPTED_NOT_SEATED,
   ACCEPT_MEANS_VISIBLE,
   GROUP_SPACE_REFUSED,
-  MAX_IMAGE_BYTES,
   MAX_MESSAGE_BODY,
   PRIVATE_MEANS_ASK,
+  nobodyRunsGroup,
   useGroup,
   useGroupActions,
   useGroupMessages,
@@ -103,186 +67,28 @@ import {
 } from "@/social/groupSpace";
 
 /**
- * The group workspace — the private planning surface behind one party.
+ * `/social/groups/:id` — the group behind one link, whichever kind it is.
  *
- * THIS IS WHY THE FEATURE IS WORTH HAVING AT ONE MEMBER. Everything here works
- * for a party of one and stays useful: the countdown, the kit list, the sessions
- * and the notes are all planning for a mountain, and none of them need anybody
- * else to exist. What needs other people — a message arriving, a member joining,
- * a shared checklist actually reaching somebody — is exactly what this screen
- * refuses to imply.
+ * THIS FILE IS NOW TWO THINGS: a small dispatcher, and the group page on
+ * ICEFALL's server. The third thing it used to be — a 1,500-line planning
+ * workspace for a group saved on one phone — was deleted in slice S7, and the
+ * note where it stood says where each of its sections went.
  *
- * THE RULES IT ENFORCES RATHER THAN MENTIONS
+ * THE RULES THE SERVER PAGE ENFORCES RATHER THAN MENTIONS
  *
- *   1. NO INVENTED MEMBER. The member list draws the athlete on this device and
- *      nothing else. Open places are stated as places, never filled.
- *   2. GROUP READINESS IS NOT A LEAGUE TABLE. It is the mean of the members
- *      ICEFALL has a figure for, drawn once for the party. Members are listed in
- *      the order they joined, never sorted by readiness, and no member is ever
- *      compared with another.
- *   3. EVERY FIGURE CARRIES ITS PROVENANCE. Readiness is derived or
- *      self-reported and says which, every time it is drawn. It is never a
- *      measurement and never a clearance to climb.
- *   4. NOTHING IS DELIVERED. Messages, RSVPs and checklist sharing are held on
- *      this device. Each surface says so BEFORE the athlete writes, not after.
- *   5. NO LINK. There is no ICEFALL page for a group, so the share surface
- *      offers text and explains the absence of a URL rather than producing one
- *      that would 404 for whoever received it.
+ *   1. NO INVENTED MEMBER AND NO INVENTED COUNT. A roster that did not come
+ *      back is a sentence, never an empty list; a count that did not come back
+ *      is drawn as nothing, never as zero.
+ *   2. READINESS IS NEVER A LEAGUE TABLE. No mean is drawn for a party — in a
+ *      group of two that is the other person's figure with one step of
+ *      arithmetic over it. Readiness is per member, as a band, with that
+ *      member's own consent, and members are listed in the order they joined.
+ *   3. EVERY FIGURE CARRIES ITS PROVENANCE. Derived or self-reported, said
+ *      every time it is drawn. Never a measurement, never a clearance to climb.
+ *   4. THE ROSTER AND THE CONVERSATION BELONG TO THE PEOPLE IN THE GROUP. A
+ *      stranger is told so in a sentence, which is the promise itself, not a
+ *      failure state.
  */
-
-/* -------------------------------------------------------------------------- */
-/* The mountain behind the group                                               */
-/* -------------------------------------------------------------------------- */
-
-interface GroupPeak {
-  name: string;
-  /** Only ever the figure recorded on the group itself. Never borrowed. */
-  elevationM?: number;
-  lat?: number;
-  lon?: number;
-  country?: string;
-  photo?: string;
-  wikipedia?: string;
-  /** The athlete's goal for this mountain, when they have one. */
-  goalId?: string;
-  /**
-   * The curated record's id, when the group's mountain is one ICEFALL has
-   * surveyed. Readiness and the shared kit list are derived from an elevation
-   * band, and for a reference entry that band is the only "assessment" there
-   * is — so both are withheld without it, the same as on the goal's own pages.
-   */
-  curatedId?: string;
-}
-
-/**
- * What ICEFALL knows about the group's mountain.
- *
- * The elevation is ONLY ever the one stored on the group when it was created —
- * it came from OpenStreetMap through the create form, and every assessment
- * downstream is derived from it. The coordinates, photograph and country are
- * borrowed from the athlete's own goal or saved objective of the same name, and
- * ONLY when that record's elevation agrees with the group's to within 50 m.
- * Without that check a name collision — two peaks called Pico Norte — would
- * quietly hand this screen the wrong latitude, and latitude decides the permit
- * region on the kit list and the season on the assessment.
- */
-function useGroupPeak(group: Expedition): GroupPeak {
-  const { goals, objectives } = useApp();
-
-  return useMemo(() => {
-    const name = group.peakName;
-    const needle = name.trim().toLowerCase();
-    const elevationM = group.elevationM;
-
-    const agrees = (candidate: number | undefined) =>
-      typeof elevationM === "number" &&
-      typeof candidate === "number" &&
-      Math.abs(candidate - elevationM) <= 50;
-
-    const goal = goals.find((g) => g.name.trim().toLowerCase() === needle && agrees(g.elevationM));
-    const objective = objectives.find(
-      (o) => o.name.trim().toLowerCase() === needle && agrees(o.elevationM),
-    );
-
-    return {
-      name,
-      elevationM,
-      lat: goal?.lat ?? objective?.lat,
-      lon: goal?.lon ?? objective?.lon,
-      country: goal?.country,
-      photo: goal?.photo ?? objective?.photo,
-      wikipedia: goal?.wikipedia ?? objective?.wikipedia,
-      goalId: goal?.id,
-      curatedId: goal?.mountainId ?? objective?.curatedId,
-    };
-  }, [group.peakName, group.elevationM, goals, objectives]);
-}
-
-/* -------------------------------------------------------------------------- */
-/* Readiness for the athlete on this device                                    */
-/* -------------------------------------------------------------------------- */
-
-interface DerivedReadiness {
-  /** A value or the reason there isn't one. Never a zero standing in for either. */
-  score: Score;
-  qualifier: DataQualifier;
-  note: string;
-}
-
-/**
- * The local athlete's readiness for this group's mountain.
- *
- * DERIVED from the sessions they recorded and from what they told ICEFALL, and
- * never measured — which is why every row that draws it carries a qualifier
- * badge and this note. It is not a clearance either: the engine withholds a
- * composite whenever a dimension the objective turns on is unknown, and this
- * hook passes that absence straight through rather than substituting a figure.
- */
-function useMemberReadiness(peak: GroupPeak): DerivedReadiness {
-  const { objectives, coachProfile } = useApp();
-  const activities = useRecordedActivities();
-  const { name, elevationM, lat, lon, curatedId } = peak;
-
-  return useMemo<DerivedReadiness>(() => {
-    if (typeof elevationM !== "number" || !Number.isFinite(elevationM)) {
-      return {
-        score: unavailable("no-data"),
-        qualifier: "estimated",
-        note: `No elevation is recorded for ${name}, and ICEFALL reads the class of an objective from its elevation. There is nothing to assess against rather than a guess at one.`,
-      };
-    }
-    if (!curatedId) {
-      return {
-        score: unavailable("no-data"),
-        qualifier: "estimated",
-        note: `${name} is a reference entry. ${REFERENCE_NO_READINESS}`,
-      };
-    }
-
-    // Simulated recordings are excluded, as everywhere else that answers "has
-    // this person been on that kind of ground". A labelled simulation is not
-    // evidence that they have.
-    const recorded = activities.filter((a) => !a.simulated);
-    const summits = objectives
-      .filter((o): o is typeof o & { summitedAt: string } => typeof o.summitedAt === "string")
-      .map((o) => ({ name: o.name, elevationM: o.elevationM, date: o.summitedAt }));
-
-    const readiness = assessObjectiveReadiness({
-      peak: { name, elevationM, lat, lon },
-      activities: recorded,
-      summitsLogged: summits,
-      selfReported: {
-        technicalSkills: coachProfile.technicalSkills,
-        maxAltitudeM: coachProfile.maxAltitudeM,
-        disciplineExperience: coachProfile.disciplineExperience,
-      },
-    });
-
-    // Disclosed conservatively: if anything the athlete told us could have
-    // reached the figure, it is labelled self-reported. Over-disclosing costs
-    // nothing; under-disclosing puts an unearned number next to a name.
-    const selfReported =
-      readiness.dimensions.some((d) => d.provenance === "self-reported") ||
-      coachProfile.technicalSkills.length > 0 ||
-      typeof coachProfile.maxAltitudeM === "number" ||
-      Object.keys(coachProfile.disciplineExperience).length > 0 ||
-      summits.length > 0;
-
-    const note = isKnown(readiness.overall)
-      ? `Derived from the sessions you have recorded${selfReported ? " and what you have told ICEFALL" : ""}, against ICEFALL's training benchmarks for this class of objective. Never measured, and not a statement that you are ready to climb ${name}.`
-      : `No single figure: ${
-          readiness.biggestGap
-            ? `${readiness.biggestGap.label.toLowerCase()} is unknown`
-            : "a dimension this objective turns on is unknown"
-        }, and a number built from the parts that happen to be known would read as a verdict on the whole mountain.`;
-
-    return {
-      score: readiness.overall,
-      qualifier: selfReported ? "self-reported" : "estimated",
-      note,
-    };
-  }, [curatedId, name, elevationM, lat, lon, activities, objectives, coachProfile]);
-}
 
 /* -------------------------------------------------------------------------- */
 /* Screen                                                                      */
@@ -292,20 +98,31 @@ function useMemberReadiness(peak: GroupPeak): DerivedReadiness {
  * ONE ROUTE, TWO KINDS OF GROUP, AND THEY ARE NOT THE SAME THING.
  *
  * `/social/groups/:id` (`/explore/groups/:id` before the move, still redirected)
- * has always resolved against `expeditions` — the parties
- * this athlete plans on this device, whose ids are `expedition-<timestamp>`.
- * That workspace is below and is unchanged: it is planning, it works at one
- * member, and it has never needed a server.
+ * has always resolved first against `expeditions` — the groups this athlete
+ * saved on this device, whose ids are `expedition-<timestamp>`. Those open
+ * read-only in `DeviceGroupSummary`, because nobody else can be in one.
  *
  * A GROUP ON ICEFALL'S SERVER is a different record with a different id — a
  * uuid — and a different promise: other people are in it, the roster is theirs,
- * and there is a conversation. That is the second half of this file, and it
- * starts at "The group as a place".
+ * and there is a conversation. That is the rest of this file, and it starts at
+ * "The group as a place".
  *
  * The two are told apart by the SHAPE OF THE ID rather than by asking the
  * server, because `.eq("id", "expedition-3")` is a type error in Postgres and
  * would come back as "the server refused that" — a sentence about the server,
  * for a link that was never a server link.
+ *
+ * A labelled example id (demo builds only, `groups/demo/exampleSource.ts`)
+ * opens the same server-group screen; its hooks answer from the examples and
+ * never ask the server.
+ *
+ * AND A PHONE GROUP THAT HAS MOVED IS A SERVER GROUP (structure plan §1.4, S6).
+ * Once its owner has tapped Move, the record here carries the id it was given,
+ * and this link — which people have sent to themselves, bookmarked and put in
+ * their own notes — goes to the real group rather than to a copy of it that
+ * cannot be joined. The redirect REPLACES, so Back does not bounce between the
+ * two. What has not moved opens read-only: `DeviceGroupSummary` shows
+ * everything that was written and takes nothing new (§2.3).
  */
 export default function GroupWorkspace() {
   const { id } = useParams<{ id: string }>();
@@ -313,134 +130,17 @@ export default function GroupWorkspace() {
 
   const group = expeditions.find((e) => e.id === id);
 
-  // Keyed by id so switching groups rebuilds the local state of every section
-  // rather than carrying one group's draft message into another's.
-  if (group) return <Workspace key={group.id} group={group} />;
+  if (group && hasMoved(group)) {
+    return <Navigate to={`/social/groups/${group.movedTo}`} replace />;
+  }
 
-  if (id && SERVER_GROUP_ID.test(id)) return <GroupSpaceScreen key={id} groupId={id} />;
+  // Keyed by id so switching groups rebuilds the local state of every section.
+  if (group) return <DeviceGroupSummary key={group.id} expedition={group} />;
+
+  if (id && (SERVER_GROUP_ID.test(id) || isExampleGroupId(id))) {
+    return <GroupSpaceScreen key={id} groupId={id} />;
+  }
   return <NoGroupUnderThatLink />;
-}
-
-function Workspace({ group }: { group: Expedition }) {
-  const { groupStyle, setGroupStyle } = useApp();
-  const peak = useGroupPeak(group);
-  const countdown = windowCountdown(group.window);
-  const style = groupStyle[group.id];
-
-  return (
-    <Screen>
-      {/* `back` IS NOT DECORATION HERE. This screen used to be routed under
-          `/explore`, and `ExploreLayout`'s chevron was the only way off it —
-          this header had none of its own. At `/social/groups/:id` there is no
-          layout above it, so without this the workspace had no back control at
-          all: reachable, but only leaveable through the bottom tab bar.
-          HISTORY, not a fixed path, because this is opened from the Groups
-          list, from the create flow's "Open the workspace", from a join and
-          from search, and each of those deserves to be returned to. The
-          server-group space further down this file already does exactly this. */}
-      <ScreenHeader title={group.peakName} subtitle="Group workspace" back />
-
-      <Stagger>
-        <Rise>
-          <Hero group={group} peak={peak} />
-        </Rise>
-
-        <Rise className="pt-4">
-          <Card>
-            <div className="flex items-start gap-2.5">
-              <CalendarRange size={15} strokeWidth={1.5} className="mt-[3px] shrink-0 text-azure" />
-              <div className="min-w-0">
-                <p className="tnum text-[14px] text-snow">{formatWindow(group.window)}</p>
-                {/* Both ends of the countdown are local midnights, so this is
-                    days on the athlete's own calendar. */}
-                <p className="tnum mt-1 text-[12px] text-mist">{countdown.label}</p>
-                {countdown.note && (
-                  <p className="tnum mt-0.5 text-[11px] text-mist-dim">{countdown.note}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-1.5 border-t border-hairline pt-4">
-              <Badge tone="neutral">{EXPERIENCE_LABELS[group.experience]} · self-declared</Badge>
-              <Badge tone="neutral">
-                Party of {group.sizeMin}–{group.sizeMax}
-              </Badge>
-              <Badge tone="neutral">{group.privacy === "public" ? "Public" : "Invite-only"}</Badge>
-              {group.lookingFor.map((l) => (
-                <Badge key={l} tone="neutral">
-                  {LOOKING_FOR_LABELS[l]}
-                </Badge>
-              ))}
-            </div>
-
-            {group.description?.trim() && (
-              <p className="mt-4 whitespace-pre-wrap text-[13px] leading-relaxed text-mist">
-                {group.description.trim()}
-              </p>
-            )}
-          </Card>
-        </Rise>
-
-        <Rise className="pt-5">
-          <StyleChooser
-            style={style}
-            onChange={(next) => setGroupStyle(group.id, next)}
-            peakName={group.peakName}
-          />
-        </Rise>
-
-        <Rise className="pt-8">
-          <SectionLabel>Members · {group.memberIds.length}</SectionLabel>
-        </Rise>
-        <Members group={group} peak={peak} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Shared checklist</SectionLabel>
-        </Rise>
-        <SharedChecklist group={group} peak={peak} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Training together</SectionLabel>
-        </Rise>
-        <Sessions group={group} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Group notes</SectionLabel>
-        </Rise>
-        <Notes group={group} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Group messages</SectionLabel>
-        </Rise>
-        <Chat group={group} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Find an expedition</SectionLabel>
-        </Rise>
-        <Operators peak={peak} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Share this group</SectionLabel>
-        </Rise>
-        <Share group={group} style={style} peak={peak} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Before you meet anyone</SectionLabel>
-          <Card className="mt-3">
-            <p className="text-[12px] leading-relaxed text-mist">{SAFETY_REMINDER}</p>
-          </Card>
-        </Rise>
-
-        <Rise className="pt-6">
-          <LeaveGroup group={group} />
-        </Rise>
-
-        <Rise className="pt-6">
-          <Disclaimer>{NETWORK_NOT_CONNECTED_NOTICE}</Disclaimer>
-        </Rise>
-      </Stagger>
-    </Screen>
-  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -483,1228 +183,38 @@ function NoGroupUnderThatLink() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Hero                                                                        */
+/* The local workspace: RETIRED IN SLICE S7, 16 September 2026                 */
 /* -------------------------------------------------------------------------- */
 
-function Hero({ group, peak }: { group: Expedition; peak: GroupPeak }) {
-  const image = useMountainImage({
-    name: peak.name,
-    elevationM: peak.elevationM,
-    lat: peak.lat,
-    lon: peak.lon,
-    photo: peak.photo,
-    wikipedia: peak.wikipedia,
-  });
-
-  return (
-    <Card inset={false} className="overflow-hidden">
-      <div className="grain relative aspect-[16/10] w-full overflow-hidden bg-slate">
-        <img
-          src={image.src}
-          alt={image.real ? peak.name : ""}
-          aria-hidden={image.real ? undefined : true}
-          className={cn(
-            "absolute inset-0 h-full w-full object-cover",
-            image.real ? "opacity-100" : "opacity-45",
-          )}
-        />
-        <div className="absolute inset-0 scrim-bottom" />
-
-        {/* Band artwork is never allowed to pass as a photograph of the summit. */}
-        {!image.real && (
-          <span
-            title={image.caption}
-            className="absolute right-3 top-3 rounded-full border border-hairline-strong bg-obsidian/70 px-2 py-[3px] text-[9px] font-medium uppercase tracking-[0.1em] text-mist backdrop-blur"
-          >
-            Representative terrain
-          </span>
-        )}
-
-        <div className="absolute inset-x-0 bottom-0 p-4">
-          <h2 className="display truncate text-[30px] leading-tight text-snow">{peak.name}</h2>
-          <p className="tnum mt-1 text-[12px] text-mist">
-            {typeof peak.elevationM === "number"
-              ? `${fmtElevation(peak.elevationM)} m`
-              : "Elevation not recorded"}
-            {" · "}
-            {group.memberIds.length} of {group.sizeMax} members
-          </p>
-        </div>
-      </div>
-      {image.credit && <p className="px-4 py-2 text-[10px] text-mist-dim">{image.credit}</p>}
-    </Card>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Guided or independent                                                       */
-/* -------------------------------------------------------------------------- */
-
-const STYLE_OPTIONS: GroupStyle[] = ["guided", "independent"];
-
-/**
- * How the party intends to climb.
+/*
+ * A 1,500-LINE SCREEN WAS DELETED HERE, AND IT WAS NOT DEAD CODE BY ACCIDENT.
  *
- * Unset by default and clearable back to unset, because "not recorded" is a
- * real answer and the alternative — defaulting to independent — would have
- * ICEFALL asserting that a party is going without a guide. The note underneath
- * is the point of the control: recording it changes nothing about what the
- * mountain demands.
+ * `Workspace` and its twelve sections — Hero, StyleChooser, Members, YouRow,
+ * UnresolvedMemberRow, SharedChecklist, ChecklistRow, Sessions, SessionRow,
+ * AddSession, Notes, Chat, Share and LeaveGroup — planned an `Expedition`: a
+ * party held on one phone, whose member list could only ever hold the person
+ * holding it. Structure plan D1 makes a group ONE thing, a row in
+ * `public.groups` with real members, requests, chat and a feed, and §2.5
+ * retires this screen with the model behind it.
+ *
+ * NOTHING A USER WROTE WENT WITH IT. A group saved on this phone still opens,
+ * read-only, at `DeviceGroupSummary` — its cover, its window, what was written
+ * about it, its notes, its planned sessions and its log — with one tap that
+ * moves it to the ICEFALL account and one that deletes it from this phone.
+ * That screen has been what `/social/groups/expedition-…` opens since S6, so
+ * this code had already stopped rendering before it was removed.
+ *
+ * TWO PIECES WERE MOVED OUT FIRST, because the redesign uses both:
+ *   `useMemberReadiness`  ->  `@/groups/readiness`
+ *   `Operators`           ->  `@/components/groups/Operators`
+ *
+ * AND `@/network/groups` LOST THE CONSTANTS ONLY THIS SCREEN READ:
+ * GROUP_CHAT_NOTICE, CHECKLIST_SHARING_NOTICE, GROUP_READINESS_NOTE,
+ * SHARE_FOOTER, SHARE_LINK_UNAVAILABLE, meanReadiness and groupSummary — the
+ * last two because a group's MEAN readiness cannot be drawn any more: in a
+ * party of two it is the other person's score with one step of arithmetic over
+ * it. Readiness is per member, as a band, with that member's consent.
  */
-function StyleChooser({
-  style,
-  onChange,
-  peakName,
-}: {
-  style: GroupStyle | undefined;
-  onChange: (style: GroupStyle | null) => void;
-  peakName: string;
-}) {
-  return (
-    <Card>
-      <p className="text-[14px] text-snow">How is the party climbing?</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {STYLE_OPTIONS.map((id) => {
-          const selected = style === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={selected}
-              // Tapping the active choice clears it back to not recorded, so a
-              // mis-tap is one tap to undo rather than a standing claim.
-              onClick={() => onChange(selected ? null : id)}
-              className={cn(
-                "rounded-full border px-3.5 py-2 text-[12px] transition-colors",
-                selected
-                  ? "border-azure/50 bg-azure/[0.08] text-snow"
-                  : "border-hairline text-mist hover:border-hairline-strong hover:text-snow",
-              )}
-            >
-              {GROUP_STYLE_LABELS[id]}
-            </button>
-          );
-        })}
-      </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-        {style === undefined
-          ? "Not recorded. It is only ever what you intend — ICEFALL will not assume a party is climbing without a guide."
-          : `Recorded as your intention for ${peakName}. It changes nothing about what the mountain demands: ICEFALL defers to an IFMGA/UIAGM-certified guide for anything glaciated, technical or at altitude.`}
-      </p>
-    </Card>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Members                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The real membership, and only the real membership.
- *
- * One athlete exists on this device, so one row is drawn. Nothing fills the
- * remaining places — an empty seat is the truth, and a plausible name in it
- * would be a person somebody might plan a mountain around. The order is the
- * membership order and never the readiness order: this is a party, not a
- * leaderboard.
- */
-function Members({ group, peak }: { group: Expedition; peak: GroupPeak }) {
-  const { myProfile } = useApp();
-  const readiness = useMemberReadiness(peak);
-
-  const meId = myProfile?.id ?? LOCAL_ATHLETE_ID;
-  const isMe = (memberId: string) => memberId === meId || memberId === LOCAL_ATHLETE_ID;
-
-  // Unresolved members contribute an unknown, which the mean drops from both
-  // sides rather than scoring as zero.
-  const scores = group.memberIds.map((memberId) =>
-    isMe(memberId) ? readiness.score : unavailable("no-data"),
-  );
-  const groupReadiness = meanReadiness(scores);
-  const openPlaces = Math.max(0, group.sizeMax - group.memberIds.length);
-
-  return (
-    <>
-      <Rise className="pt-3">
-        <Card>
-          <div className="flex flex-col items-center">
-            <ScoreRing score={groupReadiness.score} unit="/100" size={116} />
-            <p className="section-label mt-3">Group readiness</p>
-            {isKnown(groupReadiness.score) && (
-              <p className="tnum mt-2 text-center text-[12px] text-mist">
-                The mean of {groupReadiness.contributing}{" "}
-                {groupReadiness.contributing === 1 ? "member" : "members"} of{" "}
-                {groupReadiness.members}.
-              </p>
-            )}
-          </div>
-          <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-relaxed text-mist-dim">
-            {GROUP_READINESS_NOTE}
-          </p>
-        </Card>
-      </Rise>
-
-      <Rise className="pt-3">
-        <ul className="space-y-3">
-          {group.memberIds.map((memberId) => (
-            <li key={memberId}>
-              {isMe(memberId) ? (
-                <YouRow group={group} peak={peak} readiness={readiness} />
-              ) : (
-                <UnresolvedMemberRow />
-              )}
-            </li>
-          ))}
-        </ul>
-
-        {openPlaces > 0 && (
-          <p className="tnum mt-3 text-[11px] leading-relaxed text-mist-dim">
-            {openPlaces} {openPlaces === 1 ? "place is" : "places are"} open and nobody is in{" "}
-            {openPlaces === 1 ? "it" : "them"}. ICEFALL has no other members, so there is nobody to
-            fill {openPlaces === 1 ? "it" : "them"} from.
-          </p>
-        )}
-      </Rise>
-
-      <Rise className="pt-4">
-        <Disclaimer>{OBJECTIVE_READINESS_DISCLAIMER}</Disclaimer>
-      </Rise>
-    </>
-  );
-}
-
-/** The athlete using this device. The only person ICEFALL knows anything about. */
-function YouRow({
-  group,
-  peak,
-  readiness,
-}: {
-  group: Expedition;
-  peak: GroupPeak;
-  readiness: DerivedReadiness;
-}) {
-  const { user, account, myProfile } = useApp();
-
-  const name = myProfile?.displayName?.trim() || account?.name || user.name;
-  // Their own onboarding answer, relabelled onto the network's scale. Nothing
-  // is inferred from recorded training — no session says what anyone can lead.
-  const experience = myProfile?.experience ?? experienceFromAppLevel(user.experience);
-  const createdThis = group.createdBy === (myProfile?.id ?? LOCAL_ATHLETE_ID);
-
-  return (
-    <div className="rounded-tile border border-hairline p-3">
-      <div className="flex items-start gap-3">
-        <Avatar name={name} size={34} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] text-snow">{name}</p>
-          <p className="mt-0.5 text-[11px] text-mist-dim">
-            You{createdThis ? " · created this group" : ""} ·{" "}
-            {EXPERIENCE_LABELS[experience].toLowerCase()}, self-declared
-          </p>
-        </div>
-
-        <div className="shrink-0 text-right">
-          {isKnown(readiness.score) ? (
-            <>
-              <p className="tnum text-[17px] font-extralight leading-none text-snow">
-                {readiness.score.value}
-                <span className="ml-0.5 text-[10px] font-normal text-mist">/100</span>
-              </p>
-              <span className="mt-1.5 inline-block">
-                <QualifierBadge kind={readiness.qualifier} />
-              </span>
-            </>
-          ) : (
-            <UnavailableState reason={readiness.score.reason ?? "no-data"} size="sm" />
-          )}
-        </div>
-      </div>
-
-      <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-        Readiness for {peak.name}. {readiness.note}
-      </p>
-    </div>
-  );
-}
-
-/**
- * A member id this device holds no profile for.
- *
- * Unreachable today — memberIds only ever contains the local athlete — but if a
- * record ever arrives from elsewhere, the row says what it does not know rather
- * than rendering a name, a photograph or a readiness figure it invented.
- */
-function UnresolvedMemberRow() {
-  return (
-    <div className="flex items-start gap-3 rounded-tile border border-dashed border-hairline p-3">
-      <span
-        aria-hidden="true"
-        className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-dashed border-hairline-strong text-mist-dim"
-      >
-        <Users size={14} strokeWidth={1.4} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[13px] text-snow">Member not on this device</p>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-mist-dim">
-          ICEFALL holds no profile for this member and will not invent one, so they are left out of
-          the group readiness average rather than counted as a zero.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Shared checklist                                                            */
-/* -------------------------------------------------------------------------- */
-
-const STATUSES: ItemStatus[] = ["have", "need", "replace", "borrow", "rent", "n/a"];
-
-/**
- * The kit list for the objective, and the athlete's own statuses against it.
- *
- * "Shared" is the intention, not the mechanism. What somebody has and has not
- * sorted is theirs: sharing is off until they turn it on, turning it on
- * transmits nothing, and with one member there is nobody it could reach anyway.
- * The switch is here because the decision is real and worth recording before a
- * backend exists — not because anything happens when it moves.
- *
- * The statuses shown are the athlete's own. Where they already have a goal for
- * this mountain, this IS that goal's equipment list rather than a second copy
- * of it, so ticking a row here and on the Equipment screen cannot disagree.
- */
-function SharedChecklist({ group, peak }: { group: Expedition; peak: GroupPeak }) {
-  const {
-    checklistStatuses,
-    setChecklistStatus,
-    clearChecklistStatus,
-    groupChecklistShared,
-    setGroupChecklistShared,
-  } = useApp();
-  const [open, setOpen] = useState(false);
-
-  const elevationM = peak.elevationM;
-
-  // Surveyed mountains only: the generator reads an elevation band, and on a
-  // reference entry that would put crampons on a volcano with no glacier
-  // (`REFERENCE_NO_KIT_LIST` records the case).
-  const generated = useMemo(
-    () =>
-      typeof elevationM === "number" && peak.curatedId
-        ? generateChecklist({ name: peak.name, elevationM, lat: peak.lat, lon: peak.lon })
-        : null,
-    [peak.name, elevationM, peak.lat, peak.lon, peak.curatedId],
-  );
-
-  // Keyed to the athlete's goal when one exists for this mountain, so the group
-  // and the Equipment screen are the same list. Otherwise keyed to the group,
-  // which keeps a group's kit list from silently overwriting a goal's.
-  const key = peak.goalId ?? `group:${group.id}`;
-  const statuses = useMemo(() => checklistStatuses[key] ?? {}, [checklistStatuses, key]);
-  const progress = useMemo(
-    () => (generated ? completion(generated.items, statuses) : null),
-    [generated, statuses],
-  );
-  const shared = groupChecklistShared[group.id] === true;
-
-  if (!generated || !progress) {
-    return (
-      <Rise className="pt-3">
-        <Card className="py-8">
-          {/* No elevation means no band, and the whole list is derived from the
-              band. Guessing one would produce a confident kit list for a
-              mountain ICEFALL knows nothing about. */}
-          <UnavailableState reason="no-data" size="lg" />
-          <p className="mt-4 text-center text-[13px] leading-relaxed text-mist">
-            {typeof elevationM === "number" && !peak.curatedId
-              ? `${peak.name} is a reference entry. ${REFERENCE_NO_KIT_LIST}`
-              : `This group has no elevation recorded for ${peak.name}, so ICEFALL cannot work out what class of mountain it is — and the kit list follows entirely from that.`}
-          </p>
-        </Card>
-      </Rise>
-    );
-  }
-
-  return (
-    <>
-      <Rise className="pt-3">
-        <Card>
-          <div className="flex flex-col items-center">
-            <ScoreRing
-              // Never a zero standing in for "nothing to count". When every item
-              // is struck out as not applicable the ring is dashed instead.
-              score={progress.applicable === 0 ? unavailable("no-data") : known(progress.overall)}
-              unit="%"
-              size={116}
-            />
-            {progress.applicable > 0 && (
-              <>
-                <p className="tnum mt-3 text-[13px] text-snow">
-                  {progress.resolved} of {progress.applicable} sorted
-                </p>
-                <p className="mt-1.5 max-w-[36ch] text-center text-[11px] leading-relaxed text-mist-dim">
-                  Have, borrowing and renting count towards this. Anything marked N/A is left out
-                  entirely, and anything you have not reviewed counts as outstanding.
-                </p>
-              </>
-            )}
-          </div>
-
-          <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-relaxed text-mist-dim">
-            {peak.goalId
-              ? "These are your own statuses, and this is the same list as the Equipment screen for this objective — not a second copy of it."
-              : "These are your own statuses, recorded here for this group. Add this mountain as an objective to plan the kit alongside your training."}
-          </p>
-
-          {peak.goalId && (
-            <Button asChild variant="secondary" className="mt-3 w-full">
-              <Link to={`/mountain/${peak.goalId}/checklist`}>
-                Open the full equipment screen
-                <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
-              </Link>
-            </Button>
-          )}
-        </Card>
-      </Rise>
-
-      <Rise className="pt-3">
-        <Card>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[14px] text-snow">Share my statuses with the group</p>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-                {CHECKLIST_SHARING_NOTICE}
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={shared}
-              aria-label="Share my checklist statuses with the group"
-              onClick={() => setGroupChecklistShared(group.id, !shared)}
-              className={cn(
-                "mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors",
-                shared ? "border-azure/50 bg-azure/[0.18]" : "border-hairline bg-white/[0.04]",
-              )}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "block h-4 w-4 rounded-full bg-snow/80 transition-transform",
-                  shared ? "translate-x-[26px]" : "translate-x-[3px]",
-                )}
-              />
-            </button>
-          </div>
-          {shared && (
-            <p className="mt-3 border-t border-hairline pt-3 text-[11px] leading-relaxed text-mist-dim">
-              Recorded. Nothing has been shared and nobody has been shown anything — there is no
-              server to share through, and no other member to share with.
-            </p>
-          )}
-        </Card>
-      </Rise>
-
-      <Rise className="pt-3">
-        <Card inset={false}>
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            className="flex w-full items-center gap-3 px-4 py-3.5 text-left"
-          >
-            <span className="flex-1 text-[13px] text-snow">
-              {open ? "Hide the kit list" : "Show the kit list"}
-            </span>
-            <span className="tnum text-[11px] text-mist-dim">{generated.items.length} items</span>
-          </button>
-
-          {open && (
-            <div className="border-t border-hairline">
-              {generated.categories.map((category) => (
-                <div key={category.id} className="border-b border-hairline last:border-b-0">
-                  <p className="section-label px-4 pb-1.5 pt-3.5">{category.label}</p>
-                  {category.items.map((item) => (
-                    <ChecklistRow
-                      key={item.id}
-                      item={item}
-                      status={statuses[item.id]}
-                      onSet={(status) => setChecklistStatus(key, item.id, status)}
-                      onClear={() => clearChecklistStatus(key, item.id)}
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </Rise>
-
-      <Rise className="pt-3">
-        <Card>
-          <p className="section-label">By category</p>
-          <div className="mt-2">
-            {generated.categories.map((category) => {
-              const applicable = progress.applicableByCategory[category.id];
-              return (
-                <FactorBar
-                  key={category.id}
-                  label={category.label}
-                  // A category struck out entirely is unknown, not zero per cent.
-                  score={
-                    applicable === 0
-                      ? unavailable("no-data")
-                      : known(progress.byCategory[category.id])
-                  }
-                  note={`${progress.resolvedByCategory[category.id]} of ${applicable} sorted`}
-                />
-              );
-            })}
-          </div>
-        </Card>
-      </Rise>
-
-      <Rise className="pt-4">
-        <Disclaimer>{CHECKLIST_DISCLAIMER}</Disclaimer>
-      </Rise>
-    </>
-  );
-}
-
-function ChecklistRow({
-  item,
-  status,
-  onSet,
-  onClear,
-}: {
-  item: ChecklistItem;
-  status: ItemStatus | undefined;
-  onSet: (status: ItemStatus) => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="px-4 py-3">
-      <div className="flex items-start gap-3">
-        <p className="min-w-0 flex-1 text-[13px] leading-snug text-snow">{item.label}</p>
-        {item.essential && <Badge tone="neutral">Essential</Badge>}
-      </div>
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        {STATUSES.map((s) => {
-          const active = status === s;
-          return (
-            <button
-              key={s}
-              type="button"
-              aria-pressed={active}
-              // Tapping the active status clears it rather than re-asserting it,
-              // so a mis-tap is one tap to undo instead of a permanent claim.
-              onClick={() => (active ? onClear() : onSet(s))}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.1em] transition-colors",
-                active
-                  ? "border-azure/50 bg-azure/10 text-azure"
-                  : "border-hairline-strong text-mist-dim hover:border-azure/30 hover:text-mist",
-              )}
-            >
-              {STATUS_LABEL[s]}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Training sessions                                                           */
-/* -------------------------------------------------------------------------- */
-
-const RSVP_OPTIONS: RsvpStatus[] = ["going", "maybe", "not-going"];
-
-const INPUT_CLASS =
-  "h-11 w-full rounded-tile border border-hairline bg-elevated/40 px-3.5 text-[14px] text-snow outline-none transition-colors placeholder:text-mist-dim focus:border-azure/50";
-
-/**
- * Sessions the group plans to do together, and who has said they are coming.
- *
- * Local, in both senses. The dates are local day keys rather than instants, so
- * a Saturday session stays on Saturday; and the whole surface is local to this
- * device, so an RSVP tells nobody. Nothing is pre-answered on the athlete's
- * behalf — a session starts with no reply from anyone, including them.
- */
-function Sessions({ group }: { group: Expedition }) {
-  const { groupSessions, addGroupSession, removeGroupSession, setSessionRsvp, myProfile } =
-    useApp();
-  const meId = myProfile?.id ?? LOCAL_ATHLETE_ID;
-
-  const sessions = useMemo(
-    () =>
-      groupSessions
-        .filter((s) => s.groupId === group.id)
-        // Chronological, so the next thing the party is doing is at the top.
-        .sort(
-          (a, b) => a.dayKey.localeCompare(b.dayKey) || (a.time ?? "").localeCompare(b.time ?? ""),
-        ),
-    [groupSessions, group.id],
-  );
-
-  return (
-    <>
-      {sessions.length === 0 ? (
-        <Rise className="pt-3">
-          <Card>
-            <p className="text-[14px] text-snow">Nothing planned yet</p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-              Plan the sessions the party will do together before the trip — the long day, the
-              glacier refresher, the loaded carry. They are held on this device, so nobody is
-              invited and no reminder goes anywhere.
-            </p>
-          </Card>
-        </Rise>
-      ) : (
-        sessions.map((session) => (
-          <Rise key={session.id} className="pt-3">
-            <SessionRow
-              session={session}
-              mine={session.rsvps[meId]}
-              onRsvp={(status) => setSessionRsvp(session.id, status)}
-              onRemove={() => removeGroupSession(session.id)}
-            />
-          </Rise>
-        ))
-      )}
-
-      <Rise className="pt-3">
-        <AddSession onAdd={(session) => addGroupSession(group.id, session)} />
-      </Rise>
-    </>
-  );
-}
-
-function SessionRow({
-  session,
-  mine,
-  onRsvp,
-  onRemove,
-}: {
-  session: GroupTrainingSession;
-  mine: RsvpStatus | undefined;
-  onRsvp: (status: RsvpStatus | null) => void;
-  onRemove: () => void;
-}) {
-  const day = parseDay(session.dayKey);
-  const today = parseDay(todayKey());
-  const past = day !== null && today !== null && day.getTime() < today.getTime();
-
-  // Only the local athlete can ever have replied, so the tally is the honest
-  // count of real replies rather than a summary of an invented party.
-  const replies = Object.keys(session.rsvps).length;
-
-  return (
-    <Card className={cn(past && "opacity-70")}>
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-[14px] text-snow">{session.title}</p>
-          <p className="tnum mt-1 text-[12px] text-mist">
-            {formatDay(session.dayKey)}
-            {session.time ? ` · ${session.time}` : ""}
-          </p>
-          {session.place && <p className="mt-0.5 text-[12px] text-mist-dim">{session.place}</p>}
-          {past && <p className="mt-1 text-[11px] text-mist-dim">This date has passed.</p>}
-        </div>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${session.title}`}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-mist-dim transition-colors hover:bg-white/[0.05] hover:text-snow"
-        >
-          <Trash2 size={14} strokeWidth={1.6} />
-        </button>
-      </div>
-
-      {session.note && (
-        <p className="mt-3 whitespace-pre-wrap text-[12px] leading-relaxed text-mist">
-          {session.note}
-        </p>
-      )}
-
-      <div className="mt-3.5 border-t border-hairline pt-3">
-        <p className="section-label">Your reply</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {RSVP_OPTIONS.map((status) => {
-            const active = mine === status;
-            return (
-              <button
-                key={status}
-                type="button"
-                aria-pressed={active}
-                // Tapping the active reply clears it back to no reply, which is
-                // a different fact from "not going" and must stay reachable.
-                onClick={() => onRsvp(active ? null : status)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-[11px] transition-colors",
-                  active
-                    ? "border-azure/50 bg-azure/10 text-azure"
-                    : "border-hairline-strong text-mist-dim hover:border-azure/30 hover:text-mist",
-                )}
-              >
-                {RSVP_LABELS[status]}
-              </button>
-            );
-          })}
-        </div>
-        <p className="tnum mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-          {replies === 0
-            ? "No replies. Yours is the only one there could be — an RSVP is saved on this device and nobody is told."
-            : `${replies} reply, yours. It is saved on this device and nobody is told.`}
-        </p>
-      </div>
-    </Card>
-  );
-}
-
-function AddSession({
-  onAdd,
-}: {
-  onAdd: (session: {
-    title: string;
-    dayKey: string;
-    time?: string;
-    place?: string;
-    note?: string;
-  }) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [dayKey, setDayKey] = useState("");
-  const [time, setTime] = useState("");
-  const [place, setPlace] = useState("");
-  const [note, setNote] = useState("");
-
-  const canAdd = title.trim().length > 0 && dayKey.length > 0;
-
-  const submit = () => {
-    if (!canAdd) return;
-    onAdd({
-      title: title.trim(),
-      dayKey,
-      time: time.trim() || undefined,
-      place: place.trim() || undefined,
-      note: note.trim() || undefined,
-    });
-    setTitle("");
-    setDayKey("");
-    setTime("");
-    setPlace("");
-    setNote("");
-  };
-
-  return (
-    <Card>
-      <div className="flex items-center gap-2.5">
-        <CalendarPlus size={15} strokeWidth={1.5} className="shrink-0 text-azure/70" />
-        <p className="section-label">Plan a session</p>
-      </div>
-
-      <div className="mt-3 space-y-2.5">
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Long day with packs, crevasse rescue practice…"
-          aria-label="What is the session?"
-          className={INPUT_CLASS}
-        />
-        <div className="flex gap-2.5">
-          <label className="min-w-0 flex-1">
-            <span className="sr-only">Date</span>
-            <DateField label="Date" value={dayKey} onChange={setDayKey} />
-          </label>
-          <label className="w-[120px] shrink-0">
-            <span className="sr-only">Time, optional</span>
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              style={{ colorScheme: "dark" }}
-              className={cn(INPUT_CLASS, "tnum")}
-            />
-          </label>
-        </div>
-        <input
-          value={place}
-          onChange={(e) => setPlace(e.target.value)}
-          placeholder="Where — a town or a meeting point, not an address"
-          aria-label="Where, optional"
-          className={INPUT_CLASS}
-        />
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={3}
-          placeholder="What the session is for, what to bring…"
-          aria-label="Notes, optional"
-          className="w-full resize-none rounded-tile border border-hairline bg-elevated/40 p-3.5 text-[13px] leading-relaxed text-snow outline-none placeholder:text-mist-dim focus:border-azure/50"
-        />
-        <Button variant="secondary" className="w-full" onClick={submit} disabled={!canAdd}>
-          <CalendarPlus size={15} strokeWidth={1.8} aria-hidden="true" />
-          Add to this device
-        </Button>
-      </div>
-
-      <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-        The date is read as a day on your own calendar rather than a moment in time, so a Saturday
-        session stays on Saturday wherever you are. Nothing is sent and nobody is invited.
-      </p>
-    </Card>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Notes                                                                       */
-/* -------------------------------------------------------------------------- */
-
-/** Free planning text. Saved as it is typed, on this device and nowhere else. */
-function Notes({ group }: { group: Expedition }) {
-  const { groupNotes, setGroupNote } = useApp();
-  const value = groupNotes[group.id] ?? "";
-
-  return (
-    <Rise className="pt-3">
-      <Card>
-        <div className="flex items-center gap-2.5">
-          <NotebookPen size={15} strokeWidth={1.5} className="shrink-0 text-azure/70" />
-          <p className="section-label">Planning notes</p>
-        </div>
-        <textarea
-          value={value}
-          onChange={(e) => setGroupNote(group.id, e.target.value)}
-          rows={6}
-          placeholder="The route, the huts, who is driving, the turnaround time you have agreed…"
-          aria-label="Group planning notes"
-          className="mt-3 w-full resize-none rounded-tile border border-hairline bg-elevated/40 p-3.5 text-[13px] leading-relaxed text-snow outline-none placeholder:text-mist-dim focus:border-azure/50"
-        />
-        <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-          Saved on this device as you type, and held nowhere else. Keep phone numbers, addresses and
-          anything you would not want read off an unlocked screen out of it.
-        </p>
-      </Card>
-    </Rise>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Messages                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The group's message log.
- *
- * The notice is above the composer rather than under it, and the control does
- * not say "Send". This is the most dangerous control in the feature to get
- * wrong: someone who believes they told the party a plan changed, and did not,
- * can end up on a mountain with people expecting something else.
- */
-function Chat({ group }: { group: Expedition }) {
-  const { groupMessages, postGroupMessage, removeGroupMessage, myProfile, user, account } =
-    useApp();
-  const [draft, setDraft] = useState("");
-  const noticeId = useId();
-
-  const messages = useMemo(
-    () =>
-      groupMessages.filter((m) => m.groupId === group.id).sort((a, b) => a.at.localeCompare(b.at)),
-    [groupMessages, group.id],
-  );
-
-  const name = myProfile?.displayName?.trim() || account?.name || user.name;
-
-  const post = () => {
-    const body = draft.trim();
-    if (body.length === 0) return;
-    postGroupMessage(group.id, body);
-    setDraft("");
-  };
-
-  return (
-    <>
-      <Rise className="pt-3">
-        <Card>
-          <div className="flex items-start gap-3">
-            <MessageSquare size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
-            <div className="min-w-0">
-              <p className="text-[13px] text-snow">This is a log, not a conversation</p>
-              <p id={noticeId} className="mt-1.5 text-[12px] leading-relaxed text-mist">
-                {GROUP_CHAT_NOTICE}
-              </p>
-            </div>
-          </div>
-        </Card>
-      </Rise>
-
-      {messages.length > 0 && (
-        <Rise className="pt-3">
-          <ul className="space-y-2.5">
-            {messages.map((message) => (
-              <li key={message.id}>
-                <Card>
-                  <div className="flex items-start gap-3">
-                    <Avatar name={name} size={28} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12px] text-mist">
-                        {name} <span className="text-mist-dim">· {fmtRelative(message.at)}</span>
-                      </p>
-                      <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-snow">
-                        {message.body}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeGroupMessage(message.id)}
-                      aria-label="Delete this message"
-                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-mist-dim transition-colors hover:bg-white/[0.05] hover:text-snow"
-                    >
-                      <Trash2 size={14} strokeWidth={1.6} />
-                    </button>
-                  </div>
-                </Card>
-              </li>
-            ))}
-          </ul>
-        </Rise>
-      )}
-
-      <Rise className="pt-3">
-        <Card>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={3}
-            aria-label="Write a message to this group"
-            aria-describedby={noticeId}
-            placeholder="Write something for the group…"
-            className="w-full resize-none rounded-tile border border-hairline bg-elevated/40 p-3.5 text-[13px] leading-relaxed text-snow outline-none placeholder:text-mist-dim focus:border-azure/50"
-          />
-          {/* Never "Send". Nothing is sent, and the word would be the app
-              claiming otherwise. */}
-          <Button
-            variant="secondary"
-            className="mt-2.5 w-full"
-            onClick={post}
-            disabled={draft.trim().length === 0}
-          >
-            Write to this device
-          </Button>
-          <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-            {messages.length === 0
-              ? "Nothing written yet. Whatever you write stays here, and the party has to be told another way."
-              : `${messages.length} ${messages.length === 1 ? "message" : "messages"}, all yours and all still on this device.`}
-          </p>
-        </Card>
-      </Rise>
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Find an expedition                                                          */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The operator directory, filtered to this group's objective.
- *
- * Filtered by `operatorsFor`, which is the same function the mountain page
- * uses, so the listings shown are the ones that plausibly work on this ground
- * rather than the whole directory with a heading over it. Every listing carries
- * what it is — a sample, or in a development build a demo with invented figures
- * — and `OPERATOR_DISCLAIMER` states that ICEFALL has no operator partnerships
- * and vets nobody. Where the group's elevation is unknown there is no class of
- * objective to filter by, and the section says that instead of listing
- * everything.
- */
-function Operators({ peak }: { peak: GroupPeak }) {
-  const elevationM = peak.elevationM;
-
-  const listings = useMemo(
-    () =>
-      typeof elevationM === "number"
-        ? operatorsFor({ country: peak.country, elevationM }).slice(0, 3)
-        : [],
-    [elevationM, peak.country],
-  );
-
-  if (typeof elevationM !== "number") {
-    return (
-      <Rise className="pt-3">
-        <Card>
-          <p className="text-[14px] text-snow">Nothing to filter by</p>
-          <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-            This group has no elevation recorded for {peak.name}, and the directory is filtered by
-            the class of objective. Listing everything under this heading would be pretending it was
-            filtered.
-          </p>
-          <Button asChild variant="secondary" className="mt-4 w-full">
-            <Link to="/explore/expeditions">Open the operator directory</Link>
-          </Button>
-        </Card>
-      </Rise>
-    );
-  }
-
-  return (
-    <>
-      <Rise className="pt-3">
-        <Card>
-          <div className="flex items-start gap-3">
-            <MountainIcon size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-azure" />
-            <p className="min-w-0 text-[12px] leading-relaxed text-mist">
-              Going with an operator is the other way to climb {peak.name}, and on serious ground it
-              is the one ICEFALL defers to. These listings are filtered to this objective.
-            </p>
-          </div>
-        </Card>
-      </Rise>
-
-      {listings.length === 0 ? (
-        <Rise className="pt-3">
-          <Card>
-            <p className="text-[14px] text-snow">No listing covers this objective</p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-              ICEFALL's directory holds a small set of illustrative listings and none of them work
-              on this ground. That is the directory being thin, not a finding about the mountain —
-              the local guides office and the national IFMGA association are the real answer.
-            </p>
-            <Button asChild variant="secondary" className="mt-4 w-full">
-              <a href={operatorSearchUrl(peak.name)} target="_blank" rel="noreferrer noopener">
-                Search for IFMGA operators
-              </a>
-            </Button>
-          </Card>
-        </Rise>
-      ) : (
-        <>
-          {listings.map((operator, i) => (
-            <Rise key={operator.id} className="pt-3">
-              <OperatorCard
-                operator={operator}
-                peak={{
-                  name: peak.name,
-                  elevationM,
-                  lat: peak.lat,
-                  lon: peak.lon,
-                  goalId: peak.goalId,
-                }}
-                rank={i + 1}
-              />
-            </Rise>
-          ))}
-          <Rise className="pt-3">
-            <Button asChild variant="secondary" className="w-full">
-              <Link to="/explore/expeditions">See the whole directory</Link>
-            </Button>
-          </Rise>
-        </>
-      )}
-
-      <Rise className="pt-4">
-        <Disclaimer>{OPERATOR_DISCLAIMER}</Disclaimer>
-      </Rise>
-
-      {listings.some((o) => o.demo) && (
-        <Rise className="pt-3">
-          <Disclaimer>{DEMO_NOTICE}</Disclaimer>
-        </Rise>
-      )}
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Sharing                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * A card, and the honest absence of a link.
- *
- * The card is text, because text is the only thing that can actually travel:
- * ICEFALL has no server, so a group has no address, and a URL printed here
- * would fail to open for whoever received it. The link control is present
- * because people look for it, and it is disabled and says why rather than
- * quietly not existing.
- */
-function Share({
-  group,
-  style,
-  peak,
-}: {
-  group: Expedition;
-  style: GroupStyle | undefined;
-  peak: GroupPeak;
-}) {
-  const [note, setNote] = useState<string | null>(null);
-  const [manualCopy, setManualCopy] = useState<string | null>(null);
-  const reasonId = useId();
-
-  const elevationLabel =
-    typeof peak.elevationM === "number" ? `${fmtElevation(peak.elevationM)} m` : "";
-  const text = useMemo(
-    () => groupSummary(group, style, elevationLabel),
-    [group, style, elevationLabel],
-  );
-
-  const share = useCallback(async () => {
-    const title = `ICEFALL group — ${group.peakName}`;
-
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-      try {
-        await navigator.share({ title, text });
-        setNote("Handed to the share sheet. ICEFALL sent nothing itself.");
-        return;
-      } catch (err) {
-        // A dismissed sheet is not a failure and must not fall through to a
-        // clipboard write the athlete did not ask for.
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    }
-
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(text);
-        setNote("Card copied. Nothing was sent from ICEFALL.");
-        return;
-      } catch {
-        /* clipboard refused — fall through to showing the text */
-      }
-    }
-
-    // Never a dead end: if the browser will neither share nor copy, the card is
-    // put on screen so it can be copied by hand.
-    setManualCopy(text);
-    setNote("This browser would not share or copy. The card is below — copy it by hand.");
-  }, [group.peakName, text]);
-
-  return (
-    <>
-      <Rise className="pt-3">
-        <Card inset={false}>
-          {/* The card as the recipient reads it — the same text the button
-              exports, rather than a prettier version of it. */}
-          <div className="border-b border-hairline px-4 py-3">
-            <p className="section-label">The card</p>
-          </div>
-          <pre className="whitespace-pre-wrap px-4 py-4 font-sans text-[12px] leading-relaxed text-mist">
-            {text}
-          </pre>
-        </Card>
-      </Rise>
-
-      <Rise className="pt-3">
-        <Button variant="secondary" className="w-full" onClick={share}>
-          <Share2 size={15} strokeWidth={1.7} aria-hidden="true" />
-          Share the card
-        </Button>
-      </Rise>
-
-      <Rise className="pt-3">
-        <Button variant="secondary" className="w-full" disabled aria-describedby={reasonId}>
-          <Link2Off size={15} strokeWidth={1.7} aria-hidden="true" />
-          Copy link — not available
-        </Button>
-        {/* A disabled control must say why. Never a button that quietly does
-            nothing, and never a URL that 404s at the other end. */}
-        <p id={reasonId} className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-          {SHARE_LINK_UNAVAILABLE}
-        </p>
-      </Rise>
-
-      {note && (
-        <Rise className="pt-2">
-          <p className="text-[11px] text-mist-dim" role="status">
-            {note}
-          </p>
-        </Rise>
-      )}
-
-      {manualCopy && (
-        <Rise className="pt-2">
-          <textarea
-            readOnly
-            value={manualCopy}
-            rows={10}
-            aria-label="Group card to copy"
-            className="w-full resize-none rounded-tile border border-hairline bg-obsidian/60 p-3 text-[11px] leading-relaxed text-mist outline-none"
-          />
-        </Rise>
-      )}
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Leaving                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Leaving, which at one member is deleting.
- *
- * It says what goes with it. Sessions, notes and messages are keyed to this
- * group and are removed with it, and there is no server holding a copy — so
- * the confirmation has to be honest about the fact that nothing can be
- * recovered afterwards.
- */
-function LeaveGroup({ group }: { group: Expedition }) {
-  const { leaveExpedition, groupSessions, groupMessages, groupNotes } = useApp();
-  const [confirming, setConfirming] = useState(false);
-  const navigate = useNavigate();
-
-  const sessions = groupSessions.filter((s) => s.groupId === group.id).length;
-  const messages = groupMessages.filter((m) => m.groupId === group.id).length;
-  const hasNote = (groupNotes[group.id] ?? "").trim().length > 0;
-
-  const carried = [
-    sessions > 0 ? `${sessions} planned ${sessions === 1 ? "session" : "sessions"}` : null,
-    messages > 0 ? `${messages} ${messages === 1 ? "message" : "messages"}` : null,
-    hasNote ? "your planning notes" : null,
-  ].filter((x): x is string => x !== null);
-
-  if (!confirming) {
-    return (
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        className="section-label text-mist-dim transition-colors hover:text-snow"
-      >
-        Leave this group
-      </button>
-    );
-  }
-
-  return (
-    <div className="rounded-tile border border-danger/30 p-3">
-      <p className="text-[12px] leading-relaxed text-mist">
-        You are the only member, so leaving deletes this group from this device
-        {carried.length > 0 ? `, along with ${carried.join(", ")}` : ""}. Nothing else holds a copy
-        — there is no server — and it cannot be recovered.
-      </p>
-      <div className="mt-3 flex gap-2">
-        <Button
-          variant="danger"
-          size="sm"
-          className="flex-1"
-          onClick={() => {
-            leaveExpedition(group.id);
-            // Replaced rather than pushed: the workspace of a group that no
-            // longer exists is not somewhere Back should return to.
-            navigate("/social?tab=groups", { replace: true });
-          }}
-        >
-          Delete it
-        </Button>
-        <Button variant="ghost" size="sm" className="flex-1" onClick={() => setConfirming(false)}>
-          Keep it
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 /* ========================================================================== */
 /* THE GROUP AS A PLACE — one group on ICEFALL's server, opened               */
@@ -1746,11 +256,11 @@ function LeaveGroup({ group }: { group: Expedition }) {
  *     at all. Zero would say a group nobody could count is a group nobody is
  *     in, and every group has at least the person who started it.
  *
- * AND THE STATE THIS BUILD IS ACTUALLY IN: the migration behind all of it
- * (`20260902220000_group_privacy_and_chat.sql`) is written and NOT PUSHED. So
- * on a review build this screen is its own not-connected state, and that state
- * has to carry it: it says the group space needs a server, that none is
- * connected here, and that nothing has been hidden — nothing was asked for.
+ * WHERE THERE IS NO SERVER TO READ: all of it needs
+ * `20260902220000_group_privacy_and_chat.sql` on the server. A build without a
+ * client, or a server without that migration, shows this screen's not-connected
+ * or not-live state, saying that nothing has been hidden. Demo builds also open
+ * the labelled examples here, each marked on the page as an example.
  */
 
 /**
@@ -1766,100 +276,17 @@ const SERVER_GROUP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 /* The honest absences                                                        */
 /* -------------------------------------------------------------------------- */
 
-type Absence = Exclude<GroupSpaceStatus, "ready" | "loading">;
-
-/**
- * A heading per absence, and every one of them names what actually happened.
+/*
+ * THE ABSENCES NOW LIVE IN `groupChrome.tsx`.
  *
- * `members-only` is in this table but it is NOT a failure — the server did its
- * job and the answer is that this is not the reader's to read. It is drawn with
- * a padlock rather than a broken plug for exactly that reason.
+ * `AbsenceMark`, `SpaceAbsence` and the ABSENCE_TITLE / ABSENCE_ICON tables
+ * moved there when the group page was rebuilt to the owner's mockup, because
+ * the new feed section needs the same treatment and a second copy of an
+ * explanation is how two screens end up disagreeing about what went wrong.
+ * Nothing about them changed except that the heading and icon can now be
+ * overridden, which is how the feed says "the posts are the group's" where the
+ * shared table would have said "Members only".
  */
-const ABSENCE_TITLE: Record<Absence, string> = {
-  "no-backend": "No server in this build",
-  "signed-out": "Your session ended",
-  "not-provisioned": "Groups are not live on the server yet",
-  unreachable: "ICEFALL could not reach the server",
-  refused: "The server refused that",
-  "not-found": "No group under that link",
-  "members-only": "Members only",
-};
-
-const ABSENCE_ICON: Record<Absence, LucideIcon> = {
-  "no-backend": Unplug,
-  "signed-out": KeyRound,
-  "not-provisioned": CloudOff,
-  unreachable: CloudOff,
-  refused: ShieldAlert,
-  "not-found": SearchX,
-  "members-only": Lock,
-};
-
-/** The house shorthand for an empty slot: a dashed ring, never a warning. */
-function AbsenceMark({ icon: Icon, size = 48 }: { icon: LucideIcon; size?: number }) {
-  return (
-    <span
-      aria-hidden="true"
-      style={{ width: size, height: size }}
-      className="grid shrink-0 place-items-center rounded-full border border-dashed border-hairline-strong text-mist-dim"
-    >
-      <Icon size={Math.round(size * 0.42)} strokeWidth={1.4} />
-    </span>
-  );
-}
-
-/**
- * Everything ICEFALL cannot show, drawn the same way every time.
- *
- * The sentence is the one the data layer wrote — never a second copy composed
- * here, because two screens with two copies of the same explanation is how they
- * end up disagreeing about what went wrong.
- *
- * TRYING AGAIN IS OFFERED ONLY WHERE IT COULD CHANGE THE ANSWER. A build with
- * no server, and a server that has not had the migration pushed to it, will
- * answer identically for ever; a Retry there is a control that exists to look
- * reassuring. The same judgement `AthleteProfile` already makes.
- */
-function SpaceAbsence({
-  status,
-  message,
-  detail,
-  onRetry,
-}: {
-  status: Absence;
-  message: string | undefined;
-  detail?: React.ReactNode;
-  onRetry?: () => void;
-}) {
-  const Icon = ABSENCE_ICON[status];
-  const retryable = status === "unreachable" || status === "refused";
-
-  return (
-    <Card>
-      <div className="flex items-start gap-3">
-        <Icon size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
-        <div className="min-w-0">
-          <p className="text-[13px] text-snow">{ABSENCE_TITLE[status]}</p>
-          {message && <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{message}</p>}
-          {detail}
-        </div>
-      </div>
-
-      {retryable && onRetry && (
-        <Button variant="secondary" size="sm" className="mt-4 w-full" onClick={onRetry}>
-          <RotateCw size={14} strokeWidth={1.8} aria-hidden="true" />
-          Try again
-        </Button>
-      )}
-
-      {status === "signed-out" && (
-        <Button asChild variant="secondary" size="sm" className="mt-4 w-full">
-          <Link to="/auth/signin">Sign in again</Link>
-        </Button>
-      )}
-    </Card>
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /* People                                                                     */
@@ -1879,12 +306,23 @@ function displayName(person: GroupPerson): string | null {
   return username ? `@${username}` : null;
 }
 
-/** An initials avatar where there is a name, and an empty slot where there is not. */
+/**
+ * Their photograph where they have uploaded one, their initials where they have
+ * not, and an empty slot where the profile row did not come back at all.
+ *
+ * `avatarUrl` WAS BEING DROPPED HERE. `GroupPerson` carries it, `Avatar` takes
+ * a `src`, and nine other surfaces pass it — so every face on a group's roster
+ * was initials even for people with a picture. Fixed while the group page was
+ * rebuilt, because the mockup's avatar stack is drawn as photographs and would
+ * have been a row of monograms.
+ */
 function PersonAvatar({ person, size = 34 }: { person: GroupPerson; size?: number }) {
   const name = displayName(person);
   // The leading @ is stripped for the monogram only — "@rob" would otherwise
   // initial as punctuation.
-  if (name) return <Avatar name={name.replace(/^@/, "")} size={size} />;
+  if (name) {
+    return <Avatar name={name.replace(/^@/, "")} src={person.avatarUrl ?? undefined} size={size} />;
+  }
   return <AbsenceMark icon={Users} size={size} />;
 }
 
@@ -1892,8 +330,86 @@ function PersonAvatar({ person, size = 34 }: { person: GroupPerson; size?: numbe
 /* The screen                                                                 */
 /* -------------------------------------------------------------------------- */
 
+type SpaceSheet = "members" | "share" | "about";
+
+/**
+ * THE FEED/CHAT SWITCH the page was missing.
+ *
+ * Two segments, not a heading over a section: what a group has posted and
+ * what has been said in it are equally real and equally reachable, and a
+ * reader should be able to move between them without a sheet opening over
+ * the page. Selecting a segment changes nothing about who can read what —
+ * `GroupFeedSection` and `Conversation` each still answer `members-only` for
+ * a stranger exactly as they did before this control existed; this is only
+ * ever which of those two answers is on screen right now.
+ */
+function FeedChatToggle({
+  view,
+  onChange,
+}: {
+  view: "feed" | "chat";
+  onChange: (view: "feed" | "chat") => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 border-b border-hairline">
+      {(["feed", "chat"] as const).map((option) => {
+        const active = view === option;
+        return (
+          <button
+            key={option}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(option)}
+            className={cn(
+              "-mb-px flex-1 border-b-2 py-2.5 text-center text-[13px] transition-colors",
+              active
+                ? "border-azure text-snow"
+                : "border-transparent text-mist-dim hover:text-mist",
+            )}
+          >
+            {option === "feed" ? "Feed" : "Chat"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function GroupSpaceScreen({ groupId }: { groupId: string }) {
   const { group, membership, state, message, reload } = useGroup(groupId);
+  /*
+   * LIFTED TO THE SCREEN, deliberately. The join and the ask are now the round
+   * action at the top of the page, their failure sentence has to sit under that
+   * row, and the leave lives in the (i) sheet — three places that must share one
+   * `busy` and one `error`, or a refused join could be reported twice and a
+   * second press could be taken while the first was still in flight.
+   */
+  const actions = useGroupActions();
+  const [sheet, setSheet] = useState<SpaceSheet | null>(null);
+  /*
+   * FEED / CHAT, AS A VISIBLE TOGGLE ON THE PAGE ITSELF, not a fourth round
+   * action that opens a sheet. The owner, 11 Sep: "when you click on a group
+   * and join there should be the feed and chat" — and after this screen's
+   * rebuild there was no control that switched between the two, only a
+   * "Posts" heading that was always on screen and a Chat sheet one tap away.
+   * This is that control: a two-way tab, right where "Posts" used to sit
+   * alone, so a member can move between what has been posted and what has
+   * been said without leaving the page.
+   */
+  const [view, setView] = useState<"feed" | "chat">("feed");
+  /*
+   * ONE ROSTER READ FOR THE WHOLE PAGE, and only for a member.
+   *
+   * The faces need the people and the chat needs to know whether the reader is
+   * the organiser — the same read, so it is taken here and handed down rather
+   * than taken twice. `useGroupRoster(undefined)` makes no request at all, so a
+   * stranger's page still asks for nothing it may not have: the roster is
+   * members-only and asking would only be refused.
+   */
+  const roster = useGroupRoster(membership === "member" ? groupId : undefined);
+  const unownedId = useId();
+  const close = () => setSheet(null);
 
   if (state === "loading") {
     return (
@@ -1921,12 +437,7 @@ function GroupSpaceScreen({ groupId }: { groupId: string }) {
               message={message}
               onRetry={reload}
               detail={
-                <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-                  All of it lives on the server — what the group is, who is in it, and anything
-                  anybody has said in it. None of that is kept on this phone, so none of it can be
-                  drawn from here, and nothing has been filled in to cover the gap. The expeditions
-                  you plan on this device are a different, separate record and are unaffected.
-                </p>
+                <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">All of it lives on the server.</p>
               }
             />
           </Rise>
@@ -1956,32 +467,240 @@ function GroupSpaceScreen({ groupId }: { groupId: string }) {
     );
   }
 
+  /*
+   * THE PRIMARY ACTION, AND WHY IT IS NEVER "INVITE".
+   *
+   * The mockup's filled accent circle says Invite. ICEFALL has no invite — no
+   * table, no call, no screen anywhere in the app. Membership is only ever
+   * self-initiated, and which of the two forms it takes is decided by the
+   * database rather than by this file: `group_members_insert` refuses a
+   * self-insert into a private group outright, so a "Join" drawn on one could
+   * do nothing but fail. Public groups are JOINED, private groups are ASKED.
+   *
+   * `accepted` is the subtle one and has its own branch. Nothing can seat a
+   * person but their own device — the insert policy pins the row to
+   * `auth.uid()` — so between an organiser saying yes and that person next opening
+   * the group they are neither pending nor a member, and the control they need
+   * is a second, explicit Join.
+   *
+   * `pending` and `declined` get NO control at all. There is deliberately no
+   * way to ask twice, so a button there would be one that does nothing.
+   */
+  const asking = group.visibility === "private";
+  const unanswerable = nobodyRunsGroup(group);
+  const primary =
+    membership === "accepted" || (membership === "none" && !asking)
+      ? {
+          icon: UserPlus,
+          label: actions.busy ? "Joining…" : "Join",
+          hint:
+            membership === "accepted" ? "Take the place you were accepted into" : "Join this group",
+          onClick: () => void actions.join(group.id),
+          disabled: actions.busy,
+          describedBy: undefined as string | undefined,
+        }
+      : membership === "none" && asking
+        ? {
+            icon: UserPlus,
+            label: actions.busy ? "Asking…" : "Ask",
+            hint: "Request to join this private group",
+            onClick: () => void actions.requestJoin(group.id),
+            disabled: actions.busy || unanswerable,
+            describedBy: unanswerable ? unownedId : undefined,
+          }
+        : null;
+
+  const mountain = group.mountain;
+  /*
+   * THE PLACE, WHATEVER KIND IT IS.
+   *
+   * `groupSpace.ts` fills `mountain` only where the catalogue row really is a
+   * peak, so a trek group has a `destination` and no `mountain`. Every sentence
+   * below reads this one where the question is "which place", and `mountain`
+   * only where the answer needs a height or a mountain page — otherwise a group
+   * for the Tour du Mont Blanc reports a failure that never happened.
+   */
+  const destination = group.destination;
+  const place = destination
+    ? [destination.range, destination.country].filter(Boolean).join(" · ")
+    : "";
+
+  /* Every item is a field that answered. Nothing is filled in. */
+  const metaItems: MetaItem[] = [
+    {
+      icon: group.visibility === "private" ? Lock : Globe,
+      label: group.visibility === "private" ? "Private" : "Public",
+    },
+  ];
+  if (place) {
+    metaItems.push({
+      // The app's own marks: a peak for a peak, footprints for a trek, and a
+      // plain pin where the catalogue did not say which.
+      icon:
+        destination?.kind === "mountain"
+          ? MountainIcon
+          : destination?.kind === "trek"
+            ? Footprints
+            : MapPin,
+      label: place,
+    });
+  }
+  if (group.intendedOn) metaItems.push({ icon: CalendarRange, label: fmtDate(group.intendedOn) });
+
   return (
-    <Screen>
-      <ScreenHeader
-        title={group.name}
-        subtitle={group.mountain ? group.mountain.name : undefined}
-        back
-      />
-
-      <Stagger>
+    <Screen padded={false}>
+      <Stagger className="px-5">
         <Rise>
-          <GroupDetails group={group} />
+          <GroupCover
+            name={group.name}
+            /* No mountain record came back means no picture. Some other peak's
+               photograph under this group's name would be ICEFALL inventing
+               where the party is going. */
+            peak={
+              mountain
+                ? { name: mountain.name, elevationM: mountain.elevationM ?? undefined }
+                : null
+            }
+            meta={
+              mountain
+                ? `${mountain.name}${
+                    typeof mountain.elevationM === "number"
+                      ? ` · ${fmtElevation(mountain.elevationM)} m`
+                      : ""
+                  }`
+                : destination
+                  ? `${destination.name}${destination.kind === "trek" ? " · Trek" : ""}`
+                  : undefined
+            }
+            backTo="/social?tab=groups"
+          />
         </Rise>
 
-        <Rise className="pt-4">
-          <Standing group={group} membership={membership} />
+        {isExampleGroupId(group.id) && (
+          <Rise className="pt-3">
+            <p className="text-[12px] leading-relaxed text-mist">{EXAMPLE_GROUP_NOTE}</p>
+          </Rise>
+        )}
+
+        {/*
+          * THREE DIFFERENT SILENCES, and only one of them is a fault.
+          *
+          * A group may now be about a place that is not a mountain, or about a
+          * subject in its own words, or about nothing in particular (owner
+          * ruling, 16 Sep 2026). None of those is a missing record, and saying
+          * "the mountain's record did not come back" about one of them would be
+          * reporting a fault that has not happened — which is why the first
+          * branch reads `destination` (the row, whatever kind it is) and only
+          * the second, where nothing resolved at all, is the old sentence.
+          */}
+        {!mountain && destination !== null && (
+          <Rise className="pt-3">
+            <p className="text-[11px] leading-relaxed text-mist-dim">
+              {destination.kind === "trek"
+                ? `${destination.name} is a trek rather than a peak, so this group carries no summit photograph and no height.`
+                : `ICEFALL's catalogue does not say what sort of place ${destination.name} is, so this group carries no photograph and no height.`}
+            </p>
+          </Rise>
+        )}
+
+        {!mountain && destination === null && group.destinationId !== null && (
+          <Rise className="pt-3">
+            <p className="text-[11px] leading-relaxed text-mist-dim">
+              The place's record did not come back with this group, so there is no photograph and it
+              is left unnamed. The group is filed against “{group.destinationId}” in ICEFALL's
+              catalogue, and that is an id rather than a name — tidying it into one, or putting
+              another mountain's picture above it, would both be ICEFALL writing this group's
+              objective for it.
+            </p>
+          </Rise>
+        )}
+
+        {!mountain && group.destinationId === null && group.topic !== null && (
+          <Rise className="pt-3">
+            <p className="text-[11px] leading-relaxed text-mist-dim">
+              This group is about {group.topic}, in its own words — ICEFALL has no record to file it
+              against, so there is no photograph and no mountain page to open.
+            </p>
+          </Rise>
+        )}
+
+        <Rise className="pt-5">
+          <GroupActionRow>
+            {primary && <GroupAction {...primary} tone="primary" />}
+            <GroupAction
+              icon={Users}
+              label="Members"
+              hint="Who is in this group"
+              onClick={() => setSheet("members")}
+            />
+            <GroupAction
+              icon={Share2}
+              label="Share"
+              hint="Share a link to this group"
+              onClick={() => setSheet("share")}
+            />
+          </GroupActionRow>
+
+          {/* A disabled control says why, at the control. This one is disabled
+              because the ask would have no reader at all. */}
+          {primary?.describedBy && (
+            <p id={unownedId} className="mt-3 text-[11px] leading-relaxed text-mist-dim">This group has nobody organising it, so a request would sit unanswered.</p>
+          )}
+
+          {actions.error && (
+            <p className="mt-3 text-[12px] leading-relaxed text-danger">{actions.error}</p>
+          )}
+        </Rise>
+
+        <StandingNote group={group} membership={membership} />
+
+        <Rise className="pt-5">
+          <MetaRow items={metaItems} onInfo={() => setSheet("about")} />
+        </Rise>
+
+        <Rise className="pt-5">
+          {membership === "member" ? (
+            <MemberStack
+              members={roster.members}
+              state={roster.state}
+              memberCount={group.memberCount}
+              onOpen={() => setSheet("members")}
+            />
+          ) : (
+            <StrangerPeople memberCount={group.memberCount} />
+          )}
+        </Rise>
+
+        <Rise className="pt-7">
+          <SectionLabel>About</SectionLabel>
+          <Card className="mt-3">
+            <p className="text-[13px] leading-relaxed text-mist">
+              {mountain
+                ? `A group for ${mountain.name}${place ? `, ${place}` : ""}.`
+                : destination
+                  ? `A group for ${destination.name}${place ? `, ${place}` : ""}.`
+                  : group.topic !== null
+                    ? `A group about ${group.topic}, in its own words.`
+                    : group.destinationId !== null
+                      ? "A group for a place whose record did not come back with it."
+                      : "A group that is not about a particular place."}
+            </p>
+            {/* A group has no description column, so the line above is all there
+                is. The three-sentence explanation that used to sit here — that
+                the field does not exist and nobody was asked for one — was
+                longer than the thing it apologised for. Removed 11 Sep 2026.
+                Nothing is hidden: what is shown is still only what is held. */}
+          </Card>
         </Rise>
 
         <Rise className="pt-8">
-          <SectionLabel>Who is in</SectionLabel>
+          <FeedChatToggle view={view} onChange={setView} />
         </Rise>
-        <Roster groupId={groupId} />
-
-        <Rise className="pt-8">
-          <SectionLabel>Conversation</SectionLabel>
-        </Rise>
-        <Conversation groupId={groupId} foundedByMe={group.foundedByMe} />
+        {view === "feed" ? (
+          <GroupFeedSection groupId={groupId} isMember={membership === "member"} />
+        ) : (
+          <Conversation groupId={groupId} canModerate={roster.isOrganiser} />
+        )}
 
         <Rise className="pt-8">
           <SectionLabel>Before you meet anyone</SectionLabel>
@@ -1990,7 +709,226 @@ function GroupSpaceScreen({ groupId }: { groupId: string }) {
           </Card>
         </Rise>
       </Stagger>
+
+      {sheet === "members" && (
+        <Sheet title="Who is in" onClose={close}>
+          <Stagger className="pb-4">
+            <Roster groupId={groupId} />
+          </Stagger>
+        </Sheet>
+      )}
+
+      {sheet === "share" && (
+        <Sheet title="Share this group" onClose={close}>
+          <Stagger className="pb-4">
+            <ShareGroupLink group={group} />
+          </Stagger>
+        </Sheet>
+      )}
+
+      {sheet === "about" && (
+        <Sheet title="About this group" onClose={close}>
+          <Stagger className="pb-4">
+            <Rise className="pt-4">
+              <GroupDetails group={group} />
+            </Rise>
+            {membership === "member" && (
+              <Rise className="pt-4">
+                <MemberStanding group={group} actions={actions} />
+              </Rise>
+            )}
+          </Stagger>
+        </Sheet>
+      )}
     </Screen>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The faces, and the two places the mockup's stack would lie                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * FOR A MEMBER: the real roster, really read, with the real remainder.
+ *
+ * The roster is `group_members` with profiles resolved, so these are people who
+ * are actually in the group. The remainder comes from the row's own
+ * `member_count` where it arrived and from the number of people read where it
+ * did not — both real counts, never a guess and never a zero.
+ */
+function MemberStack({
+  members,
+  state,
+  memberCount,
+  onOpen,
+}: {
+  members: GroupMember[];
+  state: GroupSpaceStatus;
+  memberCount: number | null;
+  onOpen: () => void;
+}) {
+  if (state === "loading") {
+    return <p className="text-[12px] text-mist-dim">Reading who is in…</p>;
+  }
+
+  if (state !== "ready" || members.length === 0) {
+    /* The roster did not come back. The count on the group row may still have,
+       and it is a different measurement — so it is drawn, and the missing faces
+       are named as missing rather than left as a gap. */
+    return (
+      <div>
+        {memberCount !== null && (
+          <p className="tnum text-[13px] text-snow">
+            {memberCount} {memberCount === 1 ? "member" : "members"}
+          </p>
+        )}
+        <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">ICEFALL could not read who is in this group just now, so no faces are drawn.</p>
+      </div>
+    );
+  }
+
+  const people: StackPerson[] = members.map((member) => ({
+    key: member.profileId,
+    name: displayName(member),
+    avatarUrl: member.avatarUrl,
+    organiser: member.isOrganiser,
+  }));
+
+  const total = memberCount ?? members.length;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Who is in this group"
+      className="flex w-full items-center gap-3 rounded-tile py-1 text-left transition-colors hover:bg-white/[0.03]"
+    >
+      <AvatarStack people={people} total={memberCount} />
+      <div className="min-w-0">
+        <p className="tnum text-[13px] text-snow">
+          {total} {total === 1 ? "member" : "members"}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * FOR EVERYBODY ELSE: no faces, and the reason where they would have been.
+ *
+ * `group_members_select` FILTERS rather than refuses, so a stranger's query
+ * comes back as zero rows with no error — and a stack built from that would be
+ * an empty row of nothing that reads as a group nobody is in. The count on the
+ * group row is computed SECURITY DEFINER and is legitimately theirs to see, so
+ * it is drawn where it arrived and nothing is drawn where it did not.
+ */
+function StrangerPeople({ memberCount }: { memberCount: number | null }) {
+  return (
+    <div className="flex items-start gap-3">
+      <AbsenceMark icon={Users} size={38} />
+      <div className="min-w-0">
+        {memberCount !== null ? (
+          <p className="tnum text-[13px] text-snow">
+            {memberCount} {memberCount === 1 ? "member" : "members"}
+          </p>
+        ) : (
+          <p className="text-[13px] text-snow">Members only</p>
+        )}
+        <p className="mt-1 text-[11px] leading-relaxed text-mist-dim">
+          {memberCount !== null
+            ? "Who they are is the group's own, and ICEFALL does not read a roster to anybody outside it. Join, and the faces are here."
+            : "The number of people in this group did not come back, so none is shown — a zero would be a wrong answer rather than an empty one. Who they are is the group's own either way."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Share — a server group really does have an address                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE ONE SHARE SURFACE IN THIS FILE THAT CAN OFFER A LINK.
+ *
+ * The local workspace's Share still says ICEFALL has no address for a group,
+ * and for a group on one phone that is true. A group on the server has a real
+ * one — `/social/groups/<uuid>`, the link the groups list already navigates to
+ * — so repeating that sentence here would be a falsehood, and a separate
+ * component is cheaper than a shared one with a lie in it.
+ *
+ * WHAT THE RECIPIENT ACTUALLY GETS is stated before the link is handed over,
+ * because a private group's link is not a way in.
+ */
+function ShareGroupLink({ group }: { group: GroupSpace }) {
+  const [note, setNote] = useState<string | null>(null);
+  const url =
+    typeof window === "undefined"
+      ? `/social/groups/${group.id}`
+      : `${window.location.origin}/social/groups/${group.id}`;
+
+  const share = useCallback(async () => {
+    const title = `ICEFALL group — ${group.name}`;
+
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title, url });
+        setNote("Handed to the share sheet. ICEFALL sent nothing itself.");
+        return;
+      } catch (err) {
+        // A dismissed sheet is not a failure and must not fall through to a
+        // clipboard write nobody asked for.
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      }
+    }
+
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(url);
+        setNote("Link copied. Nothing was sent from ICEFALL.");
+        return;
+      } catch {
+        /* clipboard refused — the link is on screen above, to copy by hand */
+      }
+    }
+
+    setNote("This browser would neither share nor copy. The link is above — copy it by hand.");
+  }, [group.name, url]);
+
+  return (
+    <>
+      <Rise className="pt-4">
+        <Card>
+          <p className="section-label">The link</p>
+          <p className="mt-2 break-all text-[12px] leading-relaxed text-mist">{url}</p>
+        </Card>
+      </Rise>
+
+      <Rise className="pt-3">
+        <Button variant="secondary" className="w-full" onClick={share}>
+          <Share2 size={15} strokeWidth={1.7} aria-hidden="true" />
+          Share this link
+        </Button>
+      </Rise>
+
+      <Rise className="pt-3">
+        <p className="text-[11px] leading-relaxed text-mist-dim">
+          Whoever opens it has to be signed in to ICEFALL, and sees the group's name, what it is
+          about and whether it is public or private — and no more than that.{" "}
+          {group.visibility === "private"
+            ? "This group is private, so the link is not a way in: they can ask to join, and its organiser decides."
+            : "This group is public, so they can join from it, and joining opens the roster and the conversation from its beginning."}
+        </p>
+      </Rise>
+
+      {note && (
+        <Rise className="pt-3">
+          <p className="text-[11px] text-mist-dim" role="status">
+            {note}
+          </p>
+        </Rise>
+      )}
+    </>
   );
 }
 
@@ -2007,15 +945,19 @@ function GroupSpaceScreen({ groupId }: { groupId: string }) {
  * with their own locked doors, further down this screen.
  *
  * THREE ABSENCES ARE DRAWN AS ABSENCES, not smoothed over:
- *   - No mountain record: the peak is left unnamed. The catalogue id is not a
+ *   - No catalogue record: the place is left unnamed. The catalogue id is not a
  *     name — "ama-dablam" title-cased is ICEFALL writing a mountain's name for
- *     it — so it is shown as the id it is, if at all.
+ *     it — so it is shown as the id it is, if at all. A place that DID come
+ *     back and is not a peak is not this: it is named, without a height.
  *   - No date: undecided, which is where most groups start. Never a placeholder
  *     season and never "TBC".
  *   - No member count: nothing. Never a zero.
  */
 function GroupDetails({ group }: { group: GroupSpace }) {
   const mountain = group.mountain;
+  /* The catalogue row of either kind. A trek fills this and never `mountain`,
+     so the branch below names it instead of reporting a missing record. */
+  const destination = group.destination;
 
   return (
     <Card>
@@ -2046,11 +988,36 @@ function GroupDetails({ group }: { group: GroupSpace }) {
                 </p>
               )}
             </>
+          ) : destination ? (
+            /* A real place that is not a peak. It has a name and a country and
+               no summit, and drawing it as a nameless failure was the bug this
+               branch exists to stop. */
+            <>
+              <p className="mt-1 text-[12px] text-mist">{destination.name}</p>
+              {(destination.range || destination.country) && (
+                <p className="mt-0.5 truncate text-[11px] text-mist-dim">
+                  {[destination.range, destination.country].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+                {destination.kind === "trek"
+                  ? "A trek rather than a peak, so ICEFALL holds no height for it."
+                  : "ICEFALL's catalogue does not say what sort of place this is, so there is no height for it."}
+              </p>
+            </>
+          ) : group.destinationId === null ? (
+            /* Not a fault: a group about a region, a community of people or a
+               peak the catalogue does not hold carries its own words instead. */
+            <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
+              {group.topic !== null
+                ? `${group.topic} — the group's own subject, which ICEFALL has no catalogue record for.`
+                : "This group is not about a particular place."}
+            </p>
           ) : (
             <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
-              The mountain's record did not come back with this group, so it is left unnamed. The
-              group is filed against “{group.destinationId}” in ICEFALL's catalogue, and that is an
-              id rather than a name — tidying it into one would be ICEFALL naming a peak for itself.
+              The place's record did not come back with this group, so it is left unnamed. The group
+              is filed against “{group.destinationId}” in ICEFALL's catalogue, and that is an id
+              rather than a name — tidying it into one would be ICEFALL naming a peak for itself.
             </p>
           )}
         </div>
@@ -2082,18 +1049,12 @@ function GroupDetails({ group }: { group: GroupSpace }) {
             {group.intendedOn ? (
               <>
                 <p className="tnum text-[13px] text-snow">{fmtDate(group.intendedOn)}</p>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-mist-dim">
-                  When the party intends to go, as whoever started the group recorded it. It is a
-                  day on the calendar rather than a booking, and nothing has been reserved.
-                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-mist-dim">When the party intends to go, as whoever started the group recorded it.</p>
               </>
             ) : (
               <>
                 <p className="text-[13px] text-snow">No date fixed yet</p>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-mist-dim">
-                  Undecided, which is where most groups start. ICEFALL leaves it empty rather than
-                  putting a placeholder season in its place.
-                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-mist-dim">Undecided, which is where most groups start.</p>
               </>
             )}
           </div>
@@ -2102,25 +1063,14 @@ function GroupDetails({ group }: { group: GroupSpace }) {
         {group.memberCount === null && (
           <div className="flex items-start gap-2.5">
             <Users size={15} strokeWidth={1.5} className="mt-[3px] shrink-0 text-mist-dim" />
-            <p className="text-[11px] leading-relaxed text-mist-dim">
-              The number of people in this group did not come back, so none is shown. A group always
-              has at least the person who started it, so a zero here would be a wrong answer rather
-              than an empty one.
-            </p>
+            <p className="text-[11px] leading-relaxed text-mist-dim">The number of people in this group did not come back, so none is shown.</p>
           </div>
         )}
 
         {group.createdBy === null && (
           <div className="flex items-start gap-2.5">
             <Users size={15} strokeWidth={1.5} className="mt-[3px] shrink-0 text-mist-dim" />
-            <p className="text-[11px] leading-relaxed text-mist-dim">
-              Whoever started this group has since deleted their ICEFALL account. The group carries
-              on without them — it belongs to the people who joined it
-              {group.visibility === "private"
-                ? ", but nobody is left who can answer a request to join it"
-                : ""}
-              .
-            </p>
+            <p className="text-[11px] leading-relaxed text-mist-dim">Whoever started this group has since deleted their ICEFALL account, and it carries on with the people who joined it.</p>
           </div>
         )}
       </div>
@@ -2144,198 +1094,197 @@ function GroupDetails({ group }: { group: GroupSpace }) {
  *
  * `accepted` IS ITS OWN STATE and is the subtle one. Nothing can seat a person
  * but their own device — the insert policy pins the row to `auth.uid()` — so
- * between a founder saying yes and that person next opening the group they are
+ * between an organiser saying yes and that person next opening the group they are
  * neither pending (the decision was made) nor a member (the row is not there).
  * Reporting either would be untrue about a decision somebody really took.
  */
-function Standing({ group, membership }: { group: GroupSpace; membership: GroupMembership }) {
-  const { join, requestJoin, leave, error, busy } = useGroupActions();
-  const [confirmingLeave, setConfirmingLeave] = useState(false);
-  const unownedId = useId();
-
-  /* Every failure sentence sits under the control that produced it. */
-  const failure = error ? (
-    <p className="mt-3 text-[12px] leading-relaxed text-danger">{error}</p>
-  ) : null;
-
-  if (membership === "member") {
-    return (
-      <Card>
-        <p className="text-[14px] text-snow">You are in this group</p>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-          Which is why you can see who else is in it and everything that has been said. Everyone in
-          it can see you the same way — that is the trade the group makes in both directions.
-        </p>
-
-        {!confirmingLeave ? (
-          <button
-            type="button"
-            onClick={() => setConfirmingLeave(true)}
-            className="section-label mt-4 text-mist-dim transition-colors hover:text-snow"
-          >
-            Leave this group
-          </button>
-        ) : (
-          <div className="mt-4 rounded-tile border border-danger/30 p-3">
-            <p className="text-[12px] leading-relaxed text-mist">
-              Leaving takes you off the roster and closes the conversation to you. It does not
-              delete the group
-              {group.foundedByMe
-                ? " — even though you started it. The people who joined keep it, and you go on"
-                  + " answering requests to join, because deleting a group is a different act"
-                : ""}
-              .
-            </p>
-            <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
-              {group.visibility === "public"
-                ? "It is a public group, so you can join again whenever you like."
-                : group.foundedByMe
-                  ? "You started it, so you can take your place again whenever you like."
-                  : "You were accepted into it, and ICEFALL keeps that decision — you could take your place again without asking."}
-            </p>
-            <div className="mt-3 flex gap-2">
-              <Button
-                variant="danger"
-                size="sm"
-                className="flex-1"
-                disabled={busy}
-                onClick={async () => {
-                  const gone = await leave(group.id);
-                  // Only closed on success. A refused leave that closed the
-                  // panel would read as "done" for something that did not
-                  // happen — the failure sentence is below and needs to stay
-                  // next to the button that caused it.
-                  if (gone) setConfirmingLeave(false);
-                }}
-              >
-                {busy ? "Leaving…" : "Leave it"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1"
-                onClick={() => setConfirmingLeave(false)}
-              >
-                Stay
-              </Button>
-            </div>
-            {failure}
-          </div>
-        )}
-      </Card>
-    );
-  }
+/**
+ * WHERE THE READER STANDS, IN WORDS. The control that goes with it is the round
+ * action at the top of the page.
+ *
+ * `Standing` used to be one card holding both the sentence and the button. The
+ * mockup puts the button in the action row, so the two were split — and every
+ * sentence survived the split, including the three states that have no control
+ * at all and are therefore ONLY this card:
+ *
+ *   accepted  a decision was really taken and the seat is not filled yet
+ *   pending   asked, and there is deliberately no way to ask twice
+ *   declined  answered no, and ICEFALL does not offer to ask again
+ *
+ * The member case is not here: for somebody already in, the page IS the answer —
+ * the roster and the feed are open. Their "you are in this group", and the leave
+ * that goes with it, are in the (i) sheet as `MemberStanding`.
+ */
+function StandingNote({ group, membership }: { group: GroupSpace; membership: GroupMembership }) {
+  if (membership === "member") return null;
 
   if (membership === "accepted") {
     return (
-      <Card>
-        <p className="text-[14px] text-snow">You have been accepted</p>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{ACCEPTED_NOT_SEATED}</p>
-        <Button className="mt-4 w-full" disabled={busy} onClick={() => void join(group.id)}>
-          {busy ? "Joining…" : "Join"}
-        </Button>
-        {failure}
-      </Card>
+      <Rise className="pt-4">
+        <Card>
+          <p className="text-[14px] text-snow">You have been accepted</p>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{ACCEPTED_NOT_SEATED}</p>
+        </Card>
+      </Rise>
     );
   }
 
   if (membership === "pending") {
     return (
-      <Card>
-        <div className="flex items-start gap-3">
-          <Hourglass size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
-          <div className="min-w-0">
-            <p className="text-[13px] text-snow">Your request is with whoever started this group</p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-              Until they answer you cannot see who is in it or what has been said. ICEFALL does not
-              tell you when they have looked, and asking again would not reach them any sooner —
-              there is deliberately no way to ask twice.
-            </p>
-            {group.createdBy === null && (
-              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-                And it will not be answered: the person who started this group has deleted their
-                ICEFALL account, so nobody holds the decision. That is worth knowing rather than
-                waiting on.
+      <Rise className="pt-4">
+        <Card>
+          <div className="flex items-start gap-3">
+            <Hourglass size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
+            <div className="min-w-0">
+              <p className="text-[13px] text-snow">Your request is with this group's organiser</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
+                Until they answer you cannot see who is in it, what has been said, or what has been
+                posted. ICEFALL does not tell you when they have looked, and asking again would not
+                reach them any sooner — there is deliberately no way to ask twice.
               </p>
-            )}
+              {nobodyRunsGroup(group) && (
+                <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">This group has nobody organising it, so nobody can answer.</p>
+              )}
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </Rise>
     );
   }
 
   if (membership === "declined") {
     return (
-      <Card>
-        <p className="text-[14px] text-snow">Your request was declined</p>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-          Whoever started this group answered no. ICEFALL does not offer to ask again — the answer
-          is kept precisely so the decision does not have to be taken twice, and pressing somebody
-          to reconsider is not something an app should automate.
-        </p>
-      </Card>
+      <Rise className="pt-4">
+        <Card>
+          <p className="text-[14px] text-snow">Your request was declined</p>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
+            This group's organiser answered no. ICEFALL does not offer to ask again — the answer
+            is kept precisely so the decision does not have to be taken twice, and pressing somebody
+            to reconsider is not something an app should automate.
+          </p>
+        </Card>
+      </Rise>
     );
   }
 
-  /* Not in, never asked. Public and private diverge completely from here. */
+  /* Not in, never asked. Public and private diverge completely from here, and
+     the difference is stated BEFORE anything is pressed. */
   if (group.visibility === "public") {
     return (
-      <Card>
-        <p className="text-[14px] text-snow">Anyone signed in can join</p>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-          Joining puts you on the roster the other members read, and opens the conversation from its
-          beginning — including everything said before today.
-        </p>
-        <Button className="mt-4 w-full" disabled={busy} onClick={() => void join(group.id)}>
-          <UserPlus size={15} strokeWidth={1.8} aria-hidden="true" />
-          {busy ? "Joining…" : "Join this group"}
-        </Button>
-        {failure}
-      </Card>
+      <Rise className="pt-4">
+        <Card>
+          <p className="text-[14px] text-snow">Anyone signed in can join</p>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
+            Joining puts you on the roster the other members read, and opens the conversation and
+            the feed from their beginning — including everything said and posted before today.
+          </p>
+        </Card>
+      </Rise>
     );
   }
 
-  /* Private. The button says ASK, because the database will only accept an ask. */
-  const unowned = group.createdBy === null;
+  return (
+    <Rise className="pt-4">
+      <Card>
+        <div className="flex items-start gap-3">
+          <Lock size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
+          <div className="min-w-0">
+            <p className="text-[13px] text-snow">This group is private</p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{PRIVATE_MEANS_ASK}</p>
+          </div>
+        </div>
+      </Card>
+    </Rise>
+  );
+}
+
+/**
+ * The member's own standing, and the one act only they can take.
+ *
+ * In the (i) sheet rather than on the page, because for somebody already in the
+ * group the page itself says they are in — the roster is open, the feed is open
+ * and the composer is there. What they occasionally want is the way out, and
+ * that has never been a thing to put under a thumb on the main screen.
+ *
+ * `actions` is the screen's, not this component's, so a leave in flight shares
+ * one `busy` with the join above it.
+ */
+function MemberStanding({
+  group,
+  actions,
+}: {
+  group: GroupSpace;
+  actions: ReturnType<typeof useGroupActions>;
+}) {
+  const { leave, error, busy } = actions;
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+
   return (
     <Card>
-      <div className="flex items-start gap-3">
-        <Lock size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
-        <div className="min-w-0">
-          <p className="text-[13px] text-snow">This group is private</p>
-          <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{PRIVATE_MEANS_ASK}</p>
+      <p className="text-[14px] text-snow">You are in this group</p>
+      <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
+        Which is why you can see who else is in it, everything that has been said and everything
+        that has been posted. Everyone in it can see you the same way — that is the trade the group
+        makes in both directions.
+      </p>
+
+      {!confirmingLeave ? (
+        <button
+          type="button"
+          onClick={() => setConfirmingLeave(true)}
+          className="section-label mt-4 text-mist-dim transition-colors hover:text-snow"
+        >
+          Leave this group
+        </button>
+      ) : (
+        <div className="mt-4 rounded-tile border border-danger/30 p-3">
+          <p className="text-[12px] leading-relaxed text-mist">
+            Leaving takes you off the roster and closes the conversation and the feed to you. It
+            does not delete the group
+            {group.foundedByMe ? " — even though you started it, the people who joined keep it" : ""}
+            .
+          </p>
+          <p className="mt-2 text-[12px] leading-relaxed text-mist-dim">
+            {group.visibility === "public"
+              ? "It is a public group, so you can join again whenever you like."
+              : group.foundedByMe
+                ? "You started it, so you can take your place again whenever you like."
+                : "You were accepted into it, and ICEFALL keeps that decision — you could take your place again without asking."}
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button
+              variant="danger"
+              size="sm"
+              className="flex-1"
+              disabled={busy}
+              onClick={async () => {
+                const gone = await leave(group.id);
+                // Only closed on success. A refused leave that closed the panel
+                // would read as "done" for something that did not happen — the
+                // failure sentence needs to stay next to the button.
+                if (gone) setConfirmingLeave(false);
+              }}
+            >
+              {busy ? "Leaving…" : "Leave it"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1"
+              onClick={() => setConfirmingLeave(false)}
+            >
+              Stay
+            </Button>
+          </div>
+          {error && <p className="mt-3 text-[12px] leading-relaxed text-danger">{error}</p>}
         </div>
-      </div>
-
-      <Button
-        variant="secondary"
-        className="mt-4 w-full"
-        disabled={busy || unowned}
-        aria-describedby={unowned ? unownedId : undefined}
-        onClick={() => void requestJoin(group.id)}
-      >
-        <UserPlus size={15} strokeWidth={1.8} aria-hidden="true" />
-        {busy ? "Asking…" : "Request to join"}
-      </Button>
-
-      {/* A disabled control says why, at the control. This one is disabled
-          because the ask would have no reader at all — not because it is
-          unfinished. */}
-      {unowned && (
-        <p id={unownedId} className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-          There is nobody to ask. The person who started this group has deleted their ICEFALL
-          account, and only they could accept — so a request would sit unanswered for ever. ICEFALL
-          would rather say that than take the ask.
-        </p>
       )}
-
-      {failure}
     </Card>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* 2 — The roster, and the founder's decisions                                */
+/* 2 — The roster, and the organiser's decisions                             */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -2352,10 +1301,10 @@ function Standing({ group, membership }: { group: GroupSpace; membership: GroupM
  * REQUESTS ARE SHOWN HERE, WITH THE ROSTER, rather than under the conversation.
  * They come from the same read, they are about membership rather than about
  * anything anybody said, and accepting one changes this list — so this is where
- * a founder is looking when they act on one.
+ * an organiser is looking when they act on one.
  */
 function Roster({ groupId }: { groupId: string }) {
-  const { members, requests, isFounder, requestsUnavailable, state, message, reload } =
+  const { members, requests, isOrganiser, requestsUnavailable, state, message, reload } =
     useGroupRoster(groupId);
 
   if (state === "loading") {
@@ -2377,16 +1326,9 @@ function Roster({ groupId }: { groupId: string }) {
           onRetry={reload}
           detail={
             state === "members-only" ? (
-              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-                Nothing has been hidden from you in particular and this is not an empty group.
-                ICEFALL simply does not read a group's members to anybody outside it — which is the
-                same protection working for you, in every group you are in.
-              </p>
+              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">Nothing has been hidden from you in particular and this is not an empty group.</p>
             ) : (
-              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-                No roster is drawn rather than a short one. Nobody has been left out of a list on
-                purpose — there is no list.
-              </p>
+              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">No roster is drawn rather than a short one.</p>
             )
           }
         />
@@ -2396,14 +1338,14 @@ function Roster({ groupId }: { groupId: string }) {
 
   return (
     <>
-      {isFounder && requests.length > 0 && <Requests groupId={groupId} requests={requests} />}
+      {isOrganiser && requests.length > 0 && <Requests groupId={groupId} requests={requests} />}
 
       {/*
-        * "NOBODY IS ASKING" AND "ICEFALL COULD NOT CHECK" LOOK IDENTICAL, because
-        * both of them draw no request cards at all — so the second one has to say
-        * so out loud. Founder-only, because nobody else is shown the list in the
-        * first place and so nobody else is missing anything.
-        */}
+       * "NOBODY IS ASKING" AND "ICEFALL COULD NOT CHECK" LOOK IDENTICAL, because
+       * both of them draw no request cards at all — so the second one has to say
+       * so out loud. Organiser-only, because nobody else is shown the list in
+       * the first place and so nobody else is missing anything.
+       */}
       {requestsUnavailable && (
         <Rise className="pt-3">
           <Card>
@@ -2437,7 +1379,7 @@ function Roster({ groupId }: { groupId: string }) {
             </p>
           </Card>
         ) : (
-          <ul className="space-y-2.5">
+          <ul className="divide-y divide-hairline">
             {members.map((member) => (
               <li key={member.profileId}>
                 <MemberRow member={member} />
@@ -2448,11 +1390,7 @@ function Roster({ groupId }: { groupId: string }) {
       </Rise>
 
       <Rise className="pt-3">
-        <p className="text-[11px] leading-relaxed text-mist-dim">
-          Everybody in the group can read this list, and everybody in it can read you. Nothing about
-          where anyone is comes from their phone — a place here is one they typed on their profile,
-          and ICEFALL stores no position for anybody.
-        </p>
+        <p className="text-[11px] leading-relaxed text-mist-dim">Everybody in the group can read this list, and everybody in it can read you.</p>
       </Rise>
     </>
   );
@@ -2462,7 +1400,7 @@ function MemberRow({ member }: { member: GroupMember }) {
   const name = displayName(member);
 
   return (
-    <div className="rounded-tile border border-hairline p-3">
+    <div className="py-3">
       <div className="flex items-start gap-3">
         <PersonAvatar person={member} />
         <div className="min-w-0 flex-1">
@@ -2472,24 +1410,21 @@ function MemberRow({ member }: { member: GroupMember }) {
             {member.location ? ` · ${member.location}` : ""}
           </p>
           {!name && (
-            <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">
-              ICEFALL could not read this person's profile and will not put a name to them. They are
-              in the group — that much is the group's own record.
-            </p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-mist-dim">ICEFALL could not read this person's profile and will not put a name to them.</p>
           )}
         </div>
-        {member.isFounder && <Badge tone="neutral">Started it</Badge>}
+        {member.isOrganiser && <Badge tone="neutral">Organiser</Badge>}
       </div>
     </div>
   );
 }
 
 /**
- * Asks to join, and the two answers. FOUNDER ONLY, twice over: the policy lets
+ * Asks to join, and the two answers. ORGANISER ONLY, twice over: the policy lets
  * nobody else write the decision, and the data layer hands nobody else the list.
  *
  * WHY THE ACCEPTED PERSON DOES NOT APPEAR ON THE ROSTER AFTERWARDS, which is
- * the thing a founder would otherwise think is broken: nothing can seat them
+ * the thing an organiser would otherwise think is broken: nothing can seat them
  * but their own device, because the insert policy pins a membership row to
  * `auth.uid()`. Accepting is permission; the place is taken the next time they
  * open the group. The outcome line below says exactly that, because a request
@@ -2502,66 +1437,67 @@ function Requests({ groupId, requests }: { groupId: string; requests: GroupJoinR
   return (
     <>
       <Rise className="pt-3">
-        <Card>
-          <div className="flex items-start gap-3">
-            <UserPlus size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-azure" />
-            <div className="min-w-0">
-              <p className="text-[13px] text-snow">
-                {requests.length} {requests.length === 1 ? "person is" : "people are"} asking to join
-              </p>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{ACCEPT_MEANS_VISIBLE}</p>
-            </div>
+        <div className="flex items-start gap-3 border-b border-hairline pb-4">
+          <UserPlus size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-azure" />
+          <div className="min-w-0">
+            <p className="text-[13px] text-snow">
+              {requests.length} {requests.length === 1 ? "person is" : "people are"} asking to
+              join
+            </p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">{ACCEPT_MEANS_VISIBLE}</p>
           </div>
-        </Card>
+        </div>
       </Rise>
 
-      {requests.map((request) => {
-        const name = displayName(request);
-        return (
-          <Rise key={request.profileId} className="pt-2.5">
-            <Card>
-              <div className="flex items-start gap-3">
-                <PersonAvatar person={request} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] text-snow">
-                    {name ?? "Profile not available"}
-                  </p>
-                  <p className="tnum mt-0.5 text-[11px] text-mist-dim">
-                    {request.requestedAt ? `Asked ${fmtRelative(request.requestedAt)}` : "Asked"}
-                  </p>
+      <Rise className="pt-1">
+        <ul className="divide-y divide-hairline">
+          {requests.map((request) => {
+            const name = displayName(request);
+            return (
+              <li key={request.profileId} className="py-3">
+                <div className="flex items-start gap-3">
+                  <PersonAvatar person={request} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] text-snow">
+                      {name ?? "Profile not available"}
+                    </p>
+                    <p className="tnum mt-0.5 text-[11px] text-mist-dim">
+                      {request.requestedAt ? `Asked ${fmtRelative(request.requestedAt)}` : "Asked"}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-3 flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="flex-1"
-                  disabled={busy}
-                  onClick={async () => {
-                    const done = await decide(groupId, request.profileId, true);
-                    if (done) setOutcome({ label: name ?? "That person", accepted: true });
-                  }}
-                >
-                  Accept
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1"
-                  disabled={busy}
-                  onClick={async () => {
-                    const done = await decide(groupId, request.profileId, false);
-                    if (done) setOutcome({ label: name ?? "That person", accepted: false });
-                  }}
-                >
-                  Decline
-                </Button>
-              </div>
-            </Card>
-          </Rise>
-        );
-      })}
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1"
+                    disabled={busy}
+                    onClick={async () => {
+                      const done = await decide(groupId, request.profileId, true);
+                      if (done) setOutcome({ label: name ?? "That person", accepted: true });
+                    }}
+                  >
+                    Accept
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1"
+                    disabled={busy}
+                    onClick={async () => {
+                      const done = await decide(groupId, request.profileId, false);
+                      if (done) setOutcome({ label: name ?? "That person", accepted: false });
+                    }}
+                  >
+                    Decline
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </Rise>
 
       {outcome && (
         <Rise className="pt-2.5">
@@ -2598,7 +1534,14 @@ function Requests({ groupId, requests }: { groupId: string; requests: GroupJoinR
  * and no update grant: a message is stood behind or deleted, never rewritten
  * under the replies to it.
  */
-function Conversation({ groupId, foundedByMe }: { groupId: string; foundedByMe: boolean }) {
+/*
+ * `canModerate` IS THE ORGANISER, NOT THE PERSON WHO STARTED IT. The database
+ * lets a group's organiser remove any message in it, and after the roles
+ * migration those are two different people the moment a group is handed on.
+ * It comes from the page's one roster read, so an organiser whose roster did
+ * not come back is shown no bin rather than one that could not work.
+ */
+function Conversation({ groupId, canModerate }: { groupId: string; canModerate: boolean }) {
   const { messages, state, message, reload } = useGroupMessages(groupId);
 
   if (state === "loading") {
@@ -2620,15 +1563,9 @@ function Conversation({ groupId, foundedByMe }: { groupId: string; foundedByMe: 
           onRetry={reload}
           detail={
             state === "members-only" ? (
-              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-                A member sees the whole conversation from its beginning, including everything said
-                before they joined. That is why it is closed until you are one.
-              </p>
+              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">A member sees the whole conversation from its beginning, including everything said before they joined.</p>
             ) : (
-              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-                No messages are drawn rather than a few. Nothing has been lost — nothing came back
-                to draw.
-              </p>
+              <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">No messages are drawn rather than a few.</p>
             )
           }
         />
@@ -2642,7 +1579,11 @@ function Conversation({ groupId, foundedByMe }: { groupId: string; foundedByMe: 
         <Rise className="pt-3">
           <Card>
             <div className="flex items-start gap-3">
-              <MessageSquare size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
+              <MessageSquare
+                size={16}
+                strokeWidth={1.5}
+                className="mt-0.5 shrink-0 text-mist-dim"
+              />
               <div className="min-w-0">
                 <p className="text-[13px] text-snow">Nothing said yet</p>
                 <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
@@ -2656,21 +1597,16 @@ function Conversation({ groupId, foundedByMe }: { groupId: string; foundedByMe: 
         </Rise>
       ) : (
         <Rise className="pt-3">
-          <ul className="space-y-2.5">
+          <ul className="divide-y divide-hairline">
             {messages.map((entry) => (
-              <li key={entry.id}>
-                <MessageRow message={entry} canDelete={entry.mine || foundedByMe} />
+              <li key={entry.id} className="py-3">
+                <MessageRow message={entry} canDelete={entry.mine || canModerate} />
               </li>
             ))}
           </ul>
 
           {/* The reason for the disabled bins, immediately under them. */}
-          <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-            Deleting is not wired up yet, so the bins above do nothing and say so. Whoever wrote a
-            message — and whoever started the group — will be able to delete one. There is no
-            editing at all, and there never will be: a message is stood behind or deleted, never
-            quietly rewritten under the replies to it.
-          </p>
+          <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">Deleting is not wired up yet, so the bins above do nothing and say so.</p>
         </Rise>
       )}
 
@@ -2683,10 +1619,7 @@ function Conversation({ groupId, foundedByMe }: { groupId: string; foundedByMe: 
           <RotateCw size={14} strokeWidth={1.8} aria-hidden="true" />
           Check for anything new
         </Button>
-        <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-          The conversation does not update on its own in this build, and nothing notifies you. This
-          asks the server again.
-        </p>
+        <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">The conversation does not update on its own in this build, and nothing notifies you.</p>
       </Rise>
     </>
   );
@@ -2696,7 +1629,7 @@ function MessageRow({ message, canDelete }: { message: GroupMessage; canDelete: 
   const name = displayName(message.author);
 
   return (
-    <Card>
+    <div>
       <div className="flex items-start gap-3">
         <PersonAvatar person={message.author} size={28} />
         <div className="min-w-0 flex-1">
@@ -2708,7 +1641,7 @@ function MessageRow({ message, canDelete }: { message: GroupMessage; canDelete: 
 
           {message.body && (
             <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-snow">
-              {message.body}
+              {linkify(message.body)}
             </p>
           )}
 
@@ -2729,10 +1662,7 @@ function MessageRow({ message, canDelete }: { message: GroupMessage; canDelete: 
                broken frame and blame the sender for it. */
             <div className="mt-2.5 flex items-start gap-2.5 rounded-tile border border-dashed border-hairline p-3">
               <ImageOff size={14} strokeWidth={1.5} className="mt-0.5 shrink-0 text-mist-dim" />
-              <p className="text-[11px] leading-relaxed text-mist-dim">
-                A picture was sent with this message and ICEFALL could not get a link to it, so
-                nothing is drawn in its place. The words are exactly as they were sent.
-              </p>
+              <p className="text-[11px] leading-relaxed text-mist-dim">A picture was sent and could not be loaded.</p>
             </div>
           )}
         </div>
@@ -2743,7 +1673,7 @@ function MessageRow({ message, canDelete }: { message: GroupMessage; canDelete: 
             disabled
             /* Disabled, with the reason on the control itself and again under
                the list. The database allows this delete — the author's own, and
-               any of them for the founder — and ICEFALL's group data layer has
+               any of them for the organiser — and ICEFALL's group data layer has
                no call for it yet. Whoever adds one wires it here. */
             title="Deleting a message is not wired up yet"
             aria-label="Delete this message — not wired up yet"
@@ -2753,7 +1683,7 @@ function MessageRow({ message, canDelete }: { message: GroupMessage; canDelete: 
           </button>
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -2784,7 +1714,6 @@ function MessageComposer({ groupId }: { groupId: string }) {
   const words = draft.trim();
   const overLimit = words.length > MAX_MESSAGE_BODY;
   const canSend = (words.length > 0 || picked !== null) && !overLimit && !busy;
-  const megabytes = Math.round(MAX_IMAGE_BYTES / 1_048_576);
 
   async function submit() {
     if (!canSend) return;
@@ -2866,7 +1795,12 @@ function MessageComposer({ groupId }: { groupId: string }) {
           </span>
         )}
 
-        <Button className="ml-auto shrink-0" size="sm" disabled={!canSend} onClick={() => void submit()}>
+        <Button
+          className="ml-auto shrink-0"
+          size="sm"
+          disabled={!canSend}
+          onClick={() => void submit()}
+        >
           <Send size={15} strokeWidth={1.8} aria-hidden="true" />
           {busy ? "Sending…" : "Send"}
         </Button>
@@ -2875,8 +1809,7 @@ function MessageComposer({ groupId }: { groupId: string }) {
       {error && <p className="mt-2.5 text-[12px] leading-relaxed text-danger">{error}</p>}
 
       <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
-        Pictures only, up to {megabytes}MB — ICEFALL does not play video, so a clip would upload
-        and then show as a broken frame. A message can be a picture on its own.
+        Pictures only, saved again without their location or camera details before they are sent.
       </p>
     </Card>
   );

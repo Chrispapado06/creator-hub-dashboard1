@@ -12,6 +12,7 @@ import { computeReadiness, type Readiness } from "@/coach/readiness";
 import { buildMemory, type CoachMemory } from "@/coach/memory";
 import { buildBriefing, type Briefing } from "@/coach/briefing";
 import type { TrainingDay, TrainingPlan, TrainingWeek } from "@/types";
+import { useDayKey } from "@/lib/useDayKey";
 
 /**
  * The Coach's view of the athlete.
@@ -55,6 +56,7 @@ export interface CoachIntel {
 
 export function useCoachIntel(): CoachIntel {
   const { user, todaysCheckIn, goals } = useApp();
+  const day = useDayKey();
   const activities = useRecordedActivities();
   const training = useTraining();
   /* The post-activity debriefs. Read here rather than inside `assessRecovery`
@@ -154,7 +156,8 @@ export function useCoachIntel(): CoachIntel {
       goal,
       cold: real.length < 3,
     };
-  }, [activities, todaysCheckIn, training, user.name, goals, debriefs, vitals]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `day`: load and recovery are "as of today"
+  }, [activities, todaysCheckIn, training, user.name, goals, debriefs, vitals, day]);
 }
 
 /**

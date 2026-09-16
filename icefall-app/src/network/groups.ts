@@ -1,31 +1,26 @@
-import { isKnown, known, unavailable, type Score } from "@/coach/types";
-import { EXPERIENCE_LABELS, type ExperienceLevel, type Expedition } from "@/network/types";
+import type { ExperienceLevel, Expedition } from "@/network/types";
 
 /**
- * Group planning — the model behind Social's Groups tab and its workspace
- * (/social?tab=groups and /social/groups/:id).
+ * WHAT IS LEFT OF A GROUP SAVED ON ONE PHONE.
  *
- * A GROUP IS AN `Expedition`. There is no second entity here and there must
- * never be one: a party forming around one mountain and one date window is
- * already modelled in `@/network/types`, it is already created through
- * `createExpedition`, and a parallel "Group" record would fork the membership,
- * the party size and the objective into two places that could disagree about
- * the same trip. Everything this module adds is either derived from an
- * `Expedition` or keyed to one by id.
+ * This file used to be the whole model behind Social's Groups tab and its
+ * workspace, and its header used to open "A GROUP IS AN `Expedition`". That is
+ * no longer true. Structure plan D1 makes a group ONE thing — a row in
+ * `public.groups`, read through `@/social/groupSpace` — and `Expedition` is now
+ * what an older build saved on a phone: a record that is read, offered for
+ * moving to the account, and otherwise left alone.
  *
- * What is genuinely new is the PLANNING layer — training sessions, notes,
- * messages and how the party intends to climb — and every one of those is held
- * on this device. ICEFALL has no server and no other members, so:
+ * SO WHAT SURVIVES HERE IS THE READING SIDE: the shapes of the planning rows
+ * (`GroupTrainingSession`, `GroupMessage`, `GroupStyle`, `RsvpStatus`) that
+ * `AppState` still holds, and the date helpers that draw a window — `parseDay`
+ * and `formatWindow`, which Home reads too.
  *
- *   · An RSVP is the athlete's own note to themselves. Nobody is told.
- *   · A message reaches nobody, and the surface that shows one says so.
- *   · Sharing the checklist is a recorded INTENTION, not a transmission.
+ * THREE THINGS WENT IN SLICE S7, each with a note where it stood: the chat and
+ * checklist notices, the party's MEAN readiness, and the written share card.
+ * All three said "ICEFALL has no server", which was true of a plan on a phone
+ * and is not true of a group other people are in.
  *
- * Nothing in this file may invent a member, a group or a measurement. The mean
- * readiness below is the clearest case: members whose readiness is unknown are
- * removed from the numerator AND the denominator rather than being scored as
- * zero, and the caller is handed the count that actually contributed so it can
- * say so on screen.
+ * Nothing in this file may invent a member, a group or a measurement.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -110,13 +105,16 @@ export interface GroupMessage {
   at: string;
 }
 
-/** Said wherever a message is written, before it is written. */
-export const GROUP_CHAT_NOTICE =
-  "Messages are held on this device and reach nobody. ICEFALL has no server and no other members, so nothing here is delivered, nobody is notified, and no reply can arrive. Anything the party needs to know has to be told to them another way.";
-
-/** Said beside the checklist-sharing switch, which shares with nobody today. */
-export const CHECKLIST_SHARING_NOTICE =
-  "What you record against each item stays yours. Sharing is off until you turn it on, and turning it on records your intention rather than sending anything — there is no server to share through and, today, nobody else in the group to share with.";
+/*
+ * GROUP_CHAT_NOTICE AND CHECKLIST_SHARING_NOTICE WERE HERE, AND WENT IN S7.
+ *
+ * Both said "there is no server and no other members", which was true of a
+ * group saved on one phone and is not true of a group on the account. The
+ * screens that read them — the phone workspace's chat and its shared checklist
+ * — were retired with the model (structure plan §2.5). A group's chat now
+ * reaches the people in it, and `social/groupSpace.ts` owns what is said about
+ * it.
+ */
 
 /* -------------------------------------------------------------------------- */
 /* Dates                                                                       */
@@ -261,56 +259,23 @@ export function windowCountdown(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Group readiness                                                             */
+/* Group readiness: NOT A THING ICEFALL DRAWS ANY MORE                         */
 /* -------------------------------------------------------------------------- */
 
-export interface GroupReadiness {
-  /** The mean of the members whose readiness is known, or the reason there is none. */
-  score: Score;
-  /** How many members contributed a figure. */
-  contributing: number;
-  /** How many members were considered. */
-  members: number;
-}
-
-/**
- * The MEAN readiness of a party, over the members ICEFALL has a figure for.
+/*
+ * `GroupReadiness`, `meanReadiness` and `GROUP_READINESS_NOTE` were deleted in
+ * slice S7, and this note stands in their place so nobody rebuilds them.
  *
- * A mean, and deliberately not a minimum, a ranking or a "weakest link": this
- * number exists so a party can see roughly where it stands while it plans, and
- * the moment it becomes an ordering it becomes pressure on whoever is at the
- * bottom of it. The screens that draw it never sort members by it.
+ * They averaged the readiness of a party. That was safe when a group had one
+ * member and the average was your own figure; it is not safe in a group of two,
+ * where the mean is the other person's score with one step of arithmetic over
+ * it. Structure plan §1.3 removes the mean from every group surface.
  *
- * Members with no known readiness are dropped from BOTH sides of the average —
- * scoring an unknown as zero would drag a party's figure down with a number
- * ICEFALL never worked out — and `contributing` is returned so the caller can
- * say how many people the figure actually describes. When nobody has a known
- * readiness there is no mean, and the absence carries its reason.
+ * WHAT REPLACES IT: a readiness BAND per member, shown only with that member's
+ * own explicit and revocable consent, never a raw score for somebody else, and
+ * never a health flag. Members are listed in the order they joined and are
+ * never sorted by readiness.
  */
-export function meanReadiness(scores: readonly Score[]): GroupReadiness {
-  const values = scores.filter(isKnown).map((s) => s.value);
-  if (values.length === 0) {
-    // No mean, rather than a mean of nothing. `no-data` is the weakest claim in
-    // the vocabulary and the only true one here: whether the party is empty or
-    // simply has no assessable member, ICEFALL has no figure to average.
-    return { score: unavailable("no-data"), contributing: 0, members: scores.length };
-  }
-  const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-  return {
-    score: known(Math.round(mean)),
-    contributing: values.length,
-    members: scores.length,
-  };
-}
-
-/**
- * Said wherever group readiness appears.
- *
- * It has two jobs: to stop the figure being read as a verdict on the party, and
- * to stop it being read as an ordering of the people in it.
- */
-export const GROUP_READINESS_NOTE =
-  "Group readiness is the average of the members ICEFALL has a figure for. It is planning information, not a ranking and not a verdict on anyone: nobody is scored against anybody else, and a member whose readiness is unknown is left out of the average rather than counted as a zero.";
 
 /* -------------------------------------------------------------------------- */
 /* Filters                                                                     */
@@ -460,46 +425,14 @@ export function matchesFilters(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Sharing                                                                     */
+/* Sharing: RETIRED IN SLICE S7                                                */
 /* -------------------------------------------------------------------------- */
 
-/**
- * The paragraph that travels with every shared group.
- *
- * It goes inside the exported text rather than only on the screen, because the
- * text is the only thing the recipient ever sees. Two claims it must make:
- * ICEFALL sent nothing, and ICEFALL has checked nobody.
+/*
+ * `SHARE_FOOTER`, `SHARE_LINK_UNAVAILABLE` and `groupSummary` produced a
+ * written card to send to somebody, because a group saved on one phone had no
+ * address anywhere. A group on the account has one — `/social/groups/<id>` —
+ * and `ShareGroupLink` in `screens/explore/GroupWorkspace.tsx` shares it.
+ * Keeping a second share surface that begins "ICEFALL has no server" would
+ * have told a reader something untrue about the group in front of them.
  */
-export const SHARE_FOOTER =
-  "Shared from ICEFALL. This group exists only on the device it was created on — ICEFALL has no server, so there is no page to open, no link to follow, no way to join from this message, and nobody has been notified. Arrange everything directly with whoever sent it. ICEFALL does not check anyone's identity, experience, qualifications or safety.";
-
-/** Why there is no link, said wherever a link would otherwise be offered. */
-export const SHARE_LINK_UNAVAILABLE =
-  "There is no link. ICEFALL has no server, so a group has no address anywhere — any URL shown here would simply fail to open for whoever you sent it to, which is worse than saying so. The card below is text you can send through anything you already use.";
-
-/**
- * The shareable card, as plain text.
- *
- * Deliberately not a URL and deliberately not an image of one: a link would
- * promise a door that does not exist.
- */
-export function groupSummary(
-  group: Expedition,
-  style: GroupStyle | undefined,
-  elevationLabel: string,
-): string {
-  const lines: string[] = [
-    `ICEFALL group — ${group.peakName}${elevationLabel ? ` (${elevationLabel})` : ""}`,
-    formatWindow(group.window),
-    `${group.memberIds.length} of ${group.sizeMax} members · party of ${group.sizeMin}–${group.sizeMax}`,
-    `Experience: ${EXPERIENCE_LABELS[group.experience]} (self-declared)`,
-  ];
-
-  if (style !== undefined) lines.push(`Style: ${GROUP_STYLE_LABELS[style]} (intended)`);
-
-  const description = group.description?.trim();
-  if (description) lines.push("", description);
-
-  lines.push("", SHARE_FOOTER);
-  return lines.join("\n");
-}

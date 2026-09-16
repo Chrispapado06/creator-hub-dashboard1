@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import {
   Ban,
+  Check,
   ChevronLeft,
   Flag,
   Link2,
@@ -26,9 +27,9 @@ import {
   SectionLabel,
   sharePage,
 } from "@/components/ui/primitives";
+import { Sheet } from "@/components/ui/Sheet";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { VerificationMark } from "@/components/ui/VerificationMark";
-import { BadgeHex } from "@/components/domain/BadgeHex";
 import { ElevationProgress } from "@/components/domain/ElevationProgress";
 import { HighlightsRow } from "@/components/social/HighlightsRow";
 import { HighlightViewer } from "@/components/social/HighlightViewer";
@@ -36,7 +37,6 @@ import { Comments } from "@/components/social/Comments";
 import { PostCard } from "@/components/social/PostCard";
 import { ReportDialog } from "@/components/social/ReportDialog";
 import { ReportSheet } from "@/components/social/ReportSheet";
-import { BADGES } from "@/badges/model";
 import { supabase } from "@/backend/client";
 import { countryName } from "@/auth/useMyProfile";
 import { useSessionState } from "@/auth/session";
@@ -51,13 +51,22 @@ import {
   PROFILE_COUNTS_NOT_LIVE,
   PROFILE_LINK_MALFORMED,
   PUBLIC_PROFILE_LIMITS,
-  SUMMITS_NOT_RECORDED,
   markKindFor,
   usePublicProfile,
-  usePublicSummits,
   type PublicProfile,
   type PublicProfileState,
 } from "@/social/publicProfile";
+import {
+  HIGHEST_SUMMIT_MEANING,
+  SUMMIT_COUNT_MEANING,
+  SUMMITS_SELF_REPORTED,
+  summitDateLabel,
+  useSummitLogs,
+  useSummitStats,
+  type PublishedSummit,
+  type SummitLogsResult,
+  type SummitStatsResult,
+} from "@/social/summits";
 import { cn } from "@/lib/utils";
 
 /**
@@ -80,11 +89,12 @@ import { cn } from "@/lib/utils";
  *
  *   REAL          name, handle, avatar, the place they typed, the month they
  *                 joined, their follower and following counts, their highlights,
- *                 their posts, the mark beside their name, Follow, and Message.
+ *                 their posts, the mark beside their name, Follow, Message, and
+ *                 (since 15 Sep) the summits they have self-reported publishing.
  *   NOT READABLE  a bio (no column on `profiles`), a cover photograph (no
  *                 column either), their objective, their connections, their
- *                 summits, their highest altitude, their activities, and any
- *                 badge.
+ *                 recorded activities, and any badge (there is still no badge
+ *                 table — see the 15 Sep note below).
  *
  * ── THE DOCTRINE, UNCHANGED FROM THE VERSION THIS REPLACES ───────────────────
  *
@@ -106,10 +116,12 @@ import { cn } from "@/lib/utils";
  * summit that is a published post — and posts ARE readable. It does not survive
  * the table: `public.posts` is a body, optional media and a timestamp, with no
  * kind, no peak and no elevation, and `social/types.ts` states it outright — A
- * POST HAS NO KIND. The only remaining route to those figures is a regex over
- * prose, and "turned back at 3,542 m" and "summited at 3,542 m" are the same
- * pattern and opposite facts. `usePublicSummits` refuses in one place and this
- * screen prints the refusal; see `SUMMITS_NOT_RECORDED`.
+ * POST HAS NO KIND. The only remaining route to those figures out of a POST is
+ * a regex over prose, and "turned back at 3,542 m" and "summited at 3,542 m"
+ * are the same pattern and opposite facts — this screen still refuses that
+ * route absolutely. `public.summit_logs` (`social/summits.ts`) is the
+ * DIFFERENT, structured route the owner asked for on 15 Sep: see the
+ * "SUMMITS BECAME REAL" note below.
  *
  * THE MARK BESIDE THE NAME IS THE SERVER'S. The drawing colours it gold, which
  * under the owner's four-mark ruling means "credentials ICEFALL checked" — a
@@ -145,6 +157,30 @@ import { cn } from "@/lib/utils";
  * print that module's own sentence rather than one composed here, including
  * `BLOCK_NOT_ENFORCED_YET` so that no screen claims a blocked person's posts
  * are hidden before 20260903010000 is pushed.
+ *
+ * ── 2026-09-15: SUMMITS BECAME REAL, BADGES DID NOT, AND SHARE WAS REBUILT ────
+ *
+ * Three changes from the owner's own flight notes, in the file they touch:
+ *
+ *   SUMMITS. `social/summits.ts` — a self-reported summit log a climber
+ *   publishes with `PublishSummit` — is what "NO FIGURE IS EVER READ OUT OF
+ *   SOMEBODY'S WORDS" above was written against; it is a structured row, not a
+ *   regex over prose, so it does not contradict that paragraph. This screen now
+ *   reads it (`useSummitLogs`, `useSummitStats`) instead of the always-empty
+ *   `usePublicSummits`, which that module's own header already named as the
+ *   thing to supersede. See `Summits` / `SummitRows` below. The publish IS the
+ *   confirmation — there is still no `verified` column and this section must
+ *   never draw a tick.
+ *
+ *   BADGES. The opposite finding: still nothing to read, for anybody, because
+ *   there is still no badge table. The old section drew all five hexagons
+ *   muted on every profile regardless, which the owner read correctly as a
+ *   claim about a person the app cannot make. It is deleted rather than fixed
+ *   in place — see the comment where it used to be.
+ *
+ *   SHARE. Three separate triggers each calling `sharePage()` or writing the
+ *   clipboard on their own account are now one `ProfileShareSheet`, opened
+ *   from all three. See that component's own header.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -180,18 +216,23 @@ const OBJECTIVE_IS_LOCAL =
 const ACTIVITIES_ARE_LOCAL =
   "A recorded session stays on the phone that recorded it — ICEFALL uploads nobody's tracks, so there is no activity here to show and none has been estimated from anything else.";
 
-/**
- * Badges, on a page that cannot read one.
+/*
+ * BADGES SECTION — REMOVED FROM THIS SCREEN ON 2026-09-15, AND ON PURPOSE.
  *
- * `badges/model.ts` is the whole model and its rule is that no badge can be
- * granted by this app; the applications it does hold are in `settings`, on the
- * device that applied. There is also NO BADGE TABLE ANYWHERE IN THE SCHEMA, so
- * this is not "we could not read theirs" — nobody holds one, and the hexagons
- * below are drawn muted for everybody because that is the true state of every
- * account.
+ * It used to draw all five `badges/model.ts` hexagons, muted, on every single
+ * profile — because there is NO BADGE TABLE ANYWHERE IN THE SCHEMA, so nobody's
+ * badge could ever be read for anybody, including the account itself. The
+ * owner's ruling: "badges only for people who have one to be displayed, if you
+ * dont then nothing is displayed for you or others." Five muted hexagons on
+ * every page is the opposite of that — it is a claim, drawn identically for
+ * everybody, that a badge SYSTEM exists to be earned, which is true, standing
+ * where a claim about THIS PERSON would go.
+ *
+ * So: nothing is drawn, for anybody, which is the honest answer today. Wiring
+ * this back in needs a real per-account signal first — a badge table or a
+ * column an approval can set — and then only the badges an account actually
+ * holds, never the other four as placeholders.
  */
-const BADGES_NONE_GRANTED =
-  "Badges are awarded by the ICEFALL team, and none is granted automatically. None has been awarded to anybody yet, so no account has one to show.";
 
 /** Liking, and what a like currently is. The same admission `Community` makes. */
 const LIKE_NOTICE =
@@ -586,6 +627,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
   const [openHighlight, setOpenHighlight] = useState<string | null>(null);
   const [commenting, setCommenting] = useState<Post | null>(null);
   const [reporting, setReporting] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   /** The mockup opens on Posts, which is also the only pill that can hold anything. */
   const [tab, setTab] = useState<ActivityTab>("posts");
 
@@ -593,7 +635,19 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
   const isYou = profile !== null && myId !== null && profile.id === myId;
 
   const follows = useFollow(isYou ? null : (profile?.id ?? null), myId);
-  const summits = usePublicSummits(profile?.id ?? "");
+  /**
+   * REPLACES `usePublicSummits` (which answered "not-recorded" to everybody,
+   * unconditionally — see `publicProfile.ts`'s own note on the field). A
+   * summit is now a real, self-reported row: `social/summits.ts` reads
+   * `summit_logs`, which a climber writes by publishing one (`PublishSummit`).
+   * Nothing here changes if that table is not yet pushed on the server — both
+   * hooks answer `not-provisioned` with an honest sentence, exactly as
+   * `usePublicSummits` used to, so this swap can never make the page say
+   * something it could not say before; it can only make it say more once the
+   * table is live.
+   */
+  const summitLogs = useSummitLogs(profile?.id ?? null);
+  const summitStats = useSummitStats(profile?.id ?? null);
   const mark = profile ? markKindFor(profile) : null;
   const posts = usePublicPosts(profile?.id ?? null);
 
@@ -626,7 +680,26 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
    * PERSON — and a link somebody shares outlives the reason they shared it.
    */
   const shareUrl = `${window.location.origin}/social/people/${profile.id}`;
-  const shareProfile = () => sharePage(`${profile.displayName} · ICEFALL`, shareUrl);
+  const openShare = () => setSharing(true);
+
+  /**
+   * The achievements chart's own empty line. `Achievements` shows `message`
+   * only when `byYear` is empty, so this covers two different empty reasons
+   * with two different sentences: the read did not land at all (loading, no
+   * backend, refused, not provisioned), versus it landed and genuinely found
+   * nothing chartable — which includes a climber who HAS published summits
+   * but never recorded a height on any of them, so `summitStats.count` is
+   * checked rather than assumed to be zero.
+   */
+  const summitChartMessage =
+    summitStats.state !== "ready"
+      ? (summitStats.message ??
+        "ICEFALL could not read published summits, so there is nothing to chart.")
+      : summitStats.count && summitStats.count > 0
+        ? "None of the summits published so far were logged with a height, so there is nothing to chart yet."
+        : isYou
+          ? "You have not published any summits with a recorded height."
+          : `${firstName} has not published any summits with a recorded height.`;
 
   /*
    * THE MESSAGE CONTROL, RESOLVED IN ONE PLACE so the pill and the sentence
@@ -687,8 +760,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
         profileId={profile.id}
         name={profile.displayName}
         isYou={isYou}
-        shareUrl={shareUrl}
-        onShare={shareProfile}
+        onShare={openShare}
       />
 
       {/* Every direct child of `Stagger` is a `Rise`. A plain wrapper here is
@@ -714,11 +786,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
         </Rise>
 
         <Rise className="pt-6">
-          <Figures
-            profile={profile}
-            summitCount={summits.summitCount}
-            highestM={summits.highestM}
-          />
+          <Figures profile={profile} summitStats={summitStats} />
         </Rise>
 
         {/* ---- Highlights ---------------------------------------------------
@@ -743,6 +811,18 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
           <HighlightsRow profileId={profile.id} isOwn={false} onOpen={setOpenHighlight} />
         </Rise>
 
+        {/* ---- Summits -------------------------------------------------------
+            The owner's ask, 15 Sep: "Add summits on what mountains the
+            climbed under highlights of the page." `social/summits.ts` is the
+            existing upload-and-confirm mechanism — a climber publishes a
+            summit log (peak, day, optionally a height, a photo) and that
+            publish IS the confirmation. There is no second, separate
+            verification step and this section must never imply one; see
+            `SUMMITS_SELF_REPORTED`. */}
+        <Rise className="pt-6">
+          <Summits logs={summitLogs} firstName={firstName} isYou={isYou} />
+        </Rise>
+
         <Rise className="pt-6">
           <ObjectiveRow />
         </Rise>
@@ -751,18 +831,14 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
             climber; below it is something the reader can do. That is a genuine
             change of kind, which is the only thing a rule is spent on. */}
         <Rise className="border-t border-hairline pt-2">
-          <ShareRow isYou={isYou} firstName={firstName} onShare={shareProfile} />
-        </Rise>
-
-        <Rise className="pt-8">
-          <Badges />
+          <ShareRow isYou={isYou} firstName={firstName} onShare={openShare} />
         </Rise>
 
         <Rise className="pt-8">
           <Achievements
-            highestM={summits.highestM}
-            byYear={summits.byYear}
-            message={summits.message}
+            highestM={summitStats.highestM}
+            byYear={summitStats.byYear}
+            message={summitChartMessage}
           />
         </Rise>
 
@@ -771,6 +847,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
             tab={tab}
             onTab={setTab}
             posts={posts}
+            summitLogs={summitLogs}
             author={author}
             isYou={isYou}
             onOpenComments={setCommenting}
@@ -779,7 +856,7 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
         </Rise>
 
         <Rise className="pt-10">
-          <ShareCard isYou={isYou} firstName={firstName} onShare={shareProfile} />
+          <ShareCard isYou={isYou} firstName={firstName} onShare={openShare} />
         </Rise>
 
         <Rise className="pt-10">
@@ -796,6 +873,15 @@ function ProfileBody({ idOrUsername, onRetry }: { idOrUsername: string; onRetry:
       )}
       {commenting !== null && <Comments post={commenting} onClose={() => setCommenting(null)} />}
       <ReportDialog postId={reporting} onClose={() => setReporting(null)} />
+      {sharing && (
+        <ProfileShareSheet
+          name={profile.displayName}
+          firstName={firstName}
+          isYou={isYou}
+          url={shareUrl}
+          onClose={() => setSharing(false)}
+        />
+      )}
     </Screen>
   );
 }
@@ -828,19 +914,17 @@ function CoverBand({
   profileId,
   name,
   isYou,
-  shareUrl,
   onShare,
 }: {
   /** The ACCOUNT — what a block row and a report both name. Never the handle. */
   profileId: string;
   name: string;
   isYou: boolean;
-  shareUrl: string;
+  /** Opens `ProfileShareSheet` — the one place a link is shared or copied now. */
   onShare: () => void;
 }) {
   const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
-  const [copied, setCopied] = useState<null | "done" | "failed">(null);
   const [reporting, setReporting] = useState<string | null>(null);
   /**
    * What the last block or unblock actually did, in the words `social/safety.ts`
@@ -891,17 +975,6 @@ function CoverBand({
             ? BLOCK_NOT_ENFORCED_YET
             : BLOCK_DONE_UNMEASURED,
     );
-  };
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied("done");
-    } catch {
-      // A clipboard the browser would not open. Said plainly rather than
-      // reporting a copy that did not happen.
-      setCopied("failed");
-    }
   };
 
   return (
@@ -955,10 +1028,7 @@ function CoverBand({
             aria-label={`More about ${name}`}
             aria-haspopup="menu"
             aria-expanded={menu}
-            onClick={() => {
-              setMenu((v) => !v);
-              setCopied(null);
-            }}
+            onClick={() => setMenu((v) => !v)}
             className="grid h-9 w-9 place-items-center rounded-full border border-hairline-strong bg-obsidian/70 text-snow backdrop-blur transition-colors hover:border-azure/50"
           >
             <MoreHorizontal size={17} strokeWidth={1.7} />
@@ -981,19 +1051,6 @@ function CoverBand({
               >
                 <Share2 size={14} strokeWidth={1.7} className="shrink-0 text-mist" />
                 Share profile
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => void copy()}
-                className="flex w-full items-center gap-2.5 border-t border-hairline px-3.5 py-3 text-left text-[13px] text-snow transition-colors hover:bg-slate/60"
-              >
-                <Link2 size={14} strokeWidth={1.7} className="shrink-0 text-mist" />
-                {copied === "done"
-                  ? "Link copied"
-                  : copied === "failed"
-                    ? "Could not copy"
-                    : "Copy link"}
               </button>
               {isYou && (
                 <Link
@@ -1305,14 +1362,19 @@ type FigureKey = "followers" | "following" | "connections" | "summits" | "highes
  */
 function Figures({
   profile,
-  summitCount,
-  highestM,
+  summitStats,
 }: {
   profile: PublicProfile;
-  summitCount: number | null;
-  highestM: number | null;
+  summitStats: SummitStatsResult;
 }) {
   const [open, setOpen] = useState<FigureKey | null>(null);
+  const summitCount = summitStats.count;
+  const highestM = summitStats.highestM;
+  /** Why the dash, when it is one — the read's own sentence, or a generic one
+      while it is still in flight. `summitStats.message` is only set for a
+      non-ready state, matching every other hint on this row. */
+  const summitDash =
+    summitStats.message ?? "ICEFALL is still reading published summits for this climber.";
 
   const figures: {
     key: FigureKey;
@@ -1365,7 +1427,7 @@ function Figures({
       label: "Summits",
       // Grouped for the same reason, though nobody will reach four figures.
       value: summitCount === null ? "—" : summitCount.toLocaleString("en-GB"),
-      hint: SUMMITS_NOT_RECORDED,
+      hint: summitCount === null ? summitDash : SUMMIT_COUNT_MEANING,
     },
     {
       key: "highest",
@@ -1373,7 +1435,7 @@ function Figures({
       label: "Highest",
       value: highestM === null ? "—" : fmtElevation(highestM),
       unit: highestM === null ? undefined : "m",
-      hint: SUMMITS_NOT_RECORDED,
+      hint: highestM === null ? summitDash : HIGHEST_SUMMIT_MEANING,
     },
   ];
 
@@ -1527,6 +1589,160 @@ function ObjectiveRow() {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Summits                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE HIGHLIGHT SECTION — "Add summits on what mountains the climbed under
+ * highlights of the page", 15 Sep.
+ *
+ * ── WHY `social/summits.ts` AND NOT A NEW MECHANISM ──────────────────────────
+ *
+ * The owner's note asks for an upload-and-confirm flow: a climber uploads
+ * something and ICEFALL shows "they climbed X" on the strength of it. That
+ * already exists — `PublishSummit` is the upload (a peak, a day, optionally a
+ * height and a photo), and pressing Publish IS the confirmation. There is no
+ * second, separate approval step anywhere in the schema (`summit_logs` has no
+ * `verified` column and no way to earn one — see that file's own header), so
+ * this section must never draw a tick or the word "verified" next to a peak.
+ * `SUMMITS_SELF_REPORTED` — "ICEFALL does not verify achievements." — is
+ * printed once, at the foot of the list, for the same reason `SummitLogCard`
+ * carries it on every card in the feed: a claim about a mountain sits beside
+ * the one sentence that says how much weight to put on it.
+ *
+ * ── EMPTY IS DRAWN, LIKE EVERY OTHER SECTION ON THIS PAGE ────────────────────
+ *
+ * Unlike Badges (removed below), a summit genuinely CAN be true of one person
+ * and not another today — `summit_logs` is per-account and self-reported, not
+ * a placeholder for a feature with no data source at all. So this follows the
+ * page's own doctrine instead: draw the section, and say in one line why it is
+ * empty when it is. `SummitRows` is shared with the "Summits" tab further down
+ * the page so the two cannot end up describing one climber's summits two
+ * different ways.
+ */
+function Summits({
+  logs,
+  firstName,
+  isYou,
+}: {
+  logs: SummitLogsResult;
+  firstName: string;
+  isYou: boolean;
+}) {
+  // Nothing is asked yet (no profile id resolved) or the very first render:
+  // stay quiet rather than open with "reading…" above a page that has not
+  // finished loading its name.
+  if (logs.state === "loading" && logs.summits.length === 0) return null;
+
+  return (
+    <>
+      <SectionLabel>Summits</SectionLabel>
+      <div className="mt-3.5">
+        <SummitRows logs={logs} isYou={isYou} firstName={firstName} />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Flat rows on hairlines, matching `ReportSheet`'s own reasoning for the same
+ * shape: a summit is one of a list, not an object in a frame, and this app's
+ * rule against a border round every row applies here exactly as it does
+ * everywhere else. Each row links to the post the summit was published as —
+ * `/social/post/:id` — which is where `SummitLogCard` draws the route and the
+ * conditions this compact list leaves out.
+ */
+function SummitRows({
+  logs,
+  isYou,
+  firstName,
+  emptyLine = false,
+}: {
+  logs: SummitLogsResult;
+  isYou: boolean;
+  firstName: string;
+  /** The "Summits" activity tab wants its empty message in the tab's own
+      quiet style (`EmptyTab`) rather than this section's; both read the same
+      underlying sentence. */
+  emptyLine?: boolean;
+}) {
+  if (logs.state === "loading") {
+    const line = "Reading published summits…";
+    return emptyLine ? (
+      <EmptyTab>{line}</EmptyTab>
+    ) : (
+      <p className="text-[12px] text-mist-dim">{line}</p>
+    );
+  }
+
+  if (logs.state !== "ready") {
+    const line = logs.message ?? "ICEFALL could not read published summits.";
+    return emptyLine ? (
+      <EmptyTab>{line}</EmptyTab>
+    ) : (
+      <p className="text-[12px] leading-relaxed text-mist-dim">{line}</p>
+    );
+  }
+
+  if (logs.summits.length === 0) {
+    const line = isYou
+      ? "You have not published a summit yet. Publishing one from a post adds it here."
+      : `${firstName} has not published any summits.`;
+    return emptyLine ? (
+      <EmptyTab>{line}</EmptyTab>
+    ) : (
+      <p className="text-[12px] leading-relaxed text-mist-dim">{line}</p>
+    );
+  }
+
+  return (
+    <div>
+      <div className="divide-y divide-hairline border-y border-hairline">
+        {logs.summits.map((s) => (
+          <SummitRow key={s.id} summit={s} />
+        ))}
+      </div>
+      {logs.truncated && (
+        <p className="mt-2.5 text-[11px] text-mist-dim">
+          Their {logs.summits.length} most recent published summits.
+        </p>
+      )}
+      <p className="mt-2.5 text-[11px] leading-relaxed text-mist-dim">
+        Self-reported. {SUMMITS_SELF_REPORTED}
+      </p>
+    </div>
+  );
+}
+
+function SummitRow({ summit }: { summit: PublishedSummit }) {
+  const hasElevation = typeof summit.elevationM === "number";
+  return (
+    <Link
+      to={`/social/post/${summit.postId}`}
+      className="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-white/[0.02]"
+    >
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-tile border border-hairline-strong bg-white/[0.02] text-azure">
+        <Mountain size={15} strokeWidth={1.6} aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] text-snow">
+          {summit.peakName}
+          {hasElevation && (
+            <span className="tnum text-[12px] text-mist-dim">
+              {" · "}
+              {fmtElevation(summit.elevationM as number)} m
+            </span>
+          )}
+        </span>
+        <span className="tnum mt-0.5 block text-[11px] text-mist-dim">
+          Summited {summitDateLabel(summit.summitedOn)}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 /**
  * SHARE PROFILE — the first of the mockup's two share surfaces.
  *
@@ -1557,64 +1773,22 @@ function ShareRow({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Badges                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The five hexagons, all of them muted, on every profile.
- *
- * NOT A DECISION ABOUT THIS PERSON. `badges/model.ts` holds the five and its
- * rule is that no badge can be granted by this app; the applications it keeps
- * live in `settings`, on the device that applied. THERE IS NO BADGE TABLE IN
- * THE SCHEMA AT ALL — no migration creates one — so there is nothing to read
- * about anybody, and "nobody holds a badge" is a true statement about every
- * account rather than a guess about this one.
- *
- * The shapes are drawn rather than the section being dropped because a badge is
- * a claim ICEFALL would make about somebody to people who might climb with
- * them, and a reader is better served knowing which five exist and that this
- * climber has none than not knowing the system exists. `muted` is
- * `BadgeHex`'s own unearned treatment, the same one the athlete's own profile
- * uses; five LIT hexagons on a profile with no badges would be the fabrication.
- */
-function Badges() {
-  return (
-    <>
-      <SectionLabel>Badges</SectionLabel>
-      <div className="mt-3.5 flex items-start justify-between gap-1">
-        {BADGES.slice(0, 5).map((badge) => (
-          <div key={badge.id} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-            <BadgeHex
-              badge={badge}
-              size={52}
-              tone="azure"
-              muted
-              className="opacity-70 saturate-[0.4]"
-            />
-            <span className="text-center text-[10px] leading-[1.25] text-mist-dim">
-              {badge.name}
-            </span>
-          </div>
-        ))}
-      </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">{BADGES_NONE_GRANTED}</p>
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Achievements                                                                */
 /* -------------------------------------------------------------------------- */
 
 /**
  * HIGHEST ELEVATION, and the chart of it by year.
  *
- * The mockup fills this with 3,182 m and a five-year line. Both come from the
- * same place and that place does not exist: nothing on ICEFALL's server records
- * a summit for anybody — no table, no column, no writer — and the local summit
- * log and passport never leave the phone that wrote them. `usePublicSummits`
- * therefore answers `null` and an empty series without making a request, and
- * this card prints the dash and the reason.
+ * The mockup fills this with 3,182 m and a five-year line. As of 15 Sep both
+ * numbers CAN come from a real place: `social/summits.ts`'s `useSummitStats`
+ * reads `public.summit_logs`, the self-reported summit a climber publishes
+ * with `PublishSummit`. `byYear` is built only from logs that carry a height —
+ * it is optional on that form — so a climber who has published summits with no
+ * recorded elevation still sees an empty chart here, correctly: there is
+ * nothing measured to plot for them, which is different from having climbed
+ * nothing. The device-local summit log and passport (`social/summitLog.ts`,
+ * `src/passport`) are a separate, private diary and never feed this chart —
+ * only what was published reaches another climber's screen.
  *
  * `ElevationProgress` renders NOTHING for an empty series, which is why the
  * message below it is not conditional on the chart: an axis with a flat line
@@ -1692,6 +1866,7 @@ function RecentActivity({
   tab,
   onTab,
   posts,
+  summitLogs,
   author,
   isYou,
   onOpenComments,
@@ -1700,6 +1875,7 @@ function RecentActivity({
   tab: ActivityTab;
   onTab: (tab: ActivityTab) => void;
   posts: PostsState;
+  summitLogs: SummitLogsResult;
   author: Author;
   isYou: boolean;
   onOpenComments: (post: Post) => void;
@@ -1744,7 +1920,9 @@ function RecentActivity({
         />
       )}
 
-      {tab === "summits" && <EmptyTab>{SUMMITS_NOT_RECORDED}</EmptyTab>}
+      {tab === "summits" && (
+        <SummitRows logs={summitLogs} isYou={isYou} firstName={firstName} emptyLine />
+      )}
       {tab === "activities" && <EmptyTab>{ACTIVITIES_ARE_LOCAL}</EmptyTab>}
     </>
   );
@@ -1857,6 +2035,127 @@ function ShareCard({
         Share
       </Button>
     </div>
+  );
+}
+
+/**
+ * THE SHARE SHEET — the redesign the owner asked for, 15 Sep: "Share profile
+ * needs a visual redesign — keep it flat, no boxes."
+ *
+ * ── WHAT IT REPLACES ──────────────────────────────────────────────────────────
+ *
+ * Before this, the page had THREE places that could trigger a share and each
+ * did its own thing: the mid-page row and the foot-of-scroll card both called
+ * `sharePage()` directly (native share, or a silent clipboard write with no
+ * confirmation on screen), and the overflow menu had a SEPARATE "Copy link"
+ * item with its own clipboard call and its own copied/failed state. Three
+ * copies of "put this link somewhere" is how they drift — the two direct
+ * `sharePage()` calls gave a desktop reader no sign anything happened at all.
+ *
+ * Now all three open this ONE sheet, and it is the only thing on the page that
+ * touches the clipboard or `navigator.share`.
+ *
+ * ── FLAT, NO BOXES ────────────────────────────────────────────────────────────
+ *
+ * The two actions are rows on a hairline, exactly the shape `ReportSheet` uses
+ * for its six reasons — "flat rows on hairlines rather than six bordered
+ * tiles: a reason is a choice in a list, not six separate objects" is that
+ * file's own reasoning, and it applies here without changing a word: sharing a
+ * profile is a choice between two actions, not two objects sitting in frames.
+ */
+function ProfileShareSheet({
+  name,
+  firstName,
+  isYou,
+  url,
+  onClose,
+}: {
+  name: string;
+  firstName: string;
+  isYou: boolean;
+  url: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
+
+  const share = () => {
+    sharePage(`${name} · ICEFALL`, url);
+    // `sharePage` cannot report which branch it took — `navigator.share` opens
+    // the OS sheet with no promise this code should wait on, and its clipboard
+    // fallback is fire-and-forget by the same function. A confirmation here
+    // would risk claiming a system share sheet finished when the reader may
+    // still be looking at it, so the row's own label is the only promise made
+    // and the sheet simply stays open.
+  };
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied("done");
+    } catch {
+      setCopied("failed");
+    }
+  };
+
+  return (
+    <Sheet title="Share this profile" onClose={onClose}>
+      <div className="space-y-4 py-4">
+        <p className="text-[11.5px] leading-relaxed text-mist-dim">
+          {isYou
+            ? "Invite others to follow your journey."
+            : `Send ${firstName}'s page to somebody.`}{" "}
+          The link opens this page and shows exactly what you can see here — nothing private travels
+          with it.
+        </p>
+
+        <div className="divide-y divide-hairline border-y border-hairline">
+          <button
+            type="button"
+            onClick={share}
+            className="flex w-full items-center gap-3 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-tile border border-azure/35 bg-azure/[0.07] text-azure">
+              <Share2 size={16} strokeWidth={1.7} aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13.5px] text-snow">Share</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-mist-dim">
+                Opens your phone's own share menu, or copies the link if it has none.
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void copyLink()}
+            className="flex w-full items-center gap-3 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-tile border border-hairline-strong bg-white/[0.02] text-mist">
+              {copied === "done" ? (
+                <Check size={16} strokeWidth={2} className="text-azure" />
+              ) : (
+                <Link2 size={16} strokeWidth={1.7} aria-hidden />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13.5px] text-snow">
+                {copied === "done"
+                  ? "Link copied"
+                  : copied === "failed"
+                    ? "Could not copy"
+                    : "Copy link"}
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] text-mist-dim">{url}</span>
+            </span>
+          </button>
+        </div>
+
+        <Disclaimer>
+          ICEFALL does not check anyone's identity, experience or qualifications, and this profile
+          shows only what {isYou ? "you have" : `${firstName} has`} chosen to make public.
+        </Disclaimer>
+      </div>
+    </Sheet>
   );
 }
 

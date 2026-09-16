@@ -3,6 +3,10 @@ import { useApp } from "@/state/AppState";
 import { useRecordedActivities } from "@/tracking/feed";
 import { certificateSkillLabel, useCertificates } from "@/passport/certificates";
 import { buildPassport, type Passport } from "./model";
+import { useDayKey } from "@/lib/useDayKey";
+import { useDebriefedGoalIds } from "@/objectives/objectiveDebrief";
+import { phoneGroupsNotMoved } from "@/groups/local/phoneGroups";
+import { useOrganisedGroupCount } from "@/social/groupSpace";
 
 /**
  * The passport, assembled from what the app already holds.
@@ -22,6 +26,13 @@ export function usePassport(): Passport {
      the certificate store. Nothing here promotes a certificate to a verified
      skill — see the header of `passport/certificates.ts`. */
   const certificates = useCertificates();
+  /* The current objective depends on the date and on which objectives were
+     debriefed — the same inputs `usePrimaryGoal` uses, so the passport and the
+     rest of the app name the same mountain. */
+  const day = useDayKey();
+  const debriefedGoalIds = useDebriefedGoalIds();
+  /* "Groups started": server groups organised, plus phone groups not yet moved. */
+  const organisedGroups = useOrganisedGroupCount();
 
   return useMemo(
     () =>
@@ -35,13 +46,15 @@ export function usePassport(): Passport {
         goals,
         activities,
         coachProfile,
-        expeditions,
+        phoneGroups: phoneGroupsNotMoved(expeditions),
+        organisedGroups,
         certificates: certificates.map((c) => ({
           skillLabel: certificateSkillLabel(c),
           courseName: c.courseName,
           awardedBy: c.awardedBy,
           completedOn: c.completedOn,
         })),
+        debriefedGoalIds,
       }),
     [
       user.name,
@@ -54,7 +67,10 @@ export function usePassport(): Passport {
       activities,
       coachProfile,
       expeditions,
+      organisedGroups,
       certificates,
+      debriefedGoalIds,
+      day,
     ],
   );
 }

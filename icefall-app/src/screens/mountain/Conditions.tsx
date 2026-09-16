@@ -34,6 +34,7 @@ import {
   CONDITIONS_ATTRIBUTION,
   CONDITIONS_DISCLAIMER,
   bandsFor,
+  forecastAge,
   getMountainConditions,
   rateDay,
   rateWindow,
@@ -42,6 +43,7 @@ import {
   type Reading,
   type WindowRating,
 } from "@/services/conditions";
+import { ForecastAgeNote, GREYED } from "@/components/domain/ForecastAge";
 
 /**
  * MOUNTAIN CONDITIONS — what is the mountain doing?
@@ -551,6 +553,7 @@ export default function Conditions() {
   const forecastable = elevationM !== undefined && lat !== undefined && lon !== undefined;
   const current = data?.current;
   const failed = !loading && (data === null || Boolean(data.error));
+  const age = forecastAge(data?.readAt);
 
   const subtitleParts = [
     elevationM !== undefined ? `${fmtElevation(elevationM)} m` : "Elevation unknown",
@@ -624,7 +627,9 @@ export default function Conditions() {
                 </Card>
               )}
 
-              <Card className="mt-3">
+              <ForecastAgeNote age={age} scope="current" className="mt-3" />
+
+              <Card className={cn("mt-3", age?.current === "stale" && GREYED)}>
                 <div className="flex items-end justify-between gap-4">
                   <div className="min-w-0">
                     <p className="section-label">Temperature</p>
@@ -661,7 +666,7 @@ export default function Conditions() {
                 )}
               </Card>
 
-              <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className={cn("mt-3 grid grid-cols-2 gap-3", age?.current === "stale" && GREYED)}>
                 <ReadingTile
                   icon={Wind}
                   label="Wind"
@@ -713,7 +718,7 @@ export default function Conditions() {
         {/* Freezing level                                                   */}
         {/* ---------------------------------------------------------------- */}
         {forecastable && !loading && (
-          <Rise className="pt-6">
+          <Rise className={cn("pt-6", age?.current === "stale" && GREYED)}>
             <SectionLabel>Freezing level</SectionLabel>
             <FreezingLevel reading={current?.freezingLevelM} summitM={elevationM} />
           </Rise>
@@ -808,8 +813,9 @@ export default function Conditions() {
           <Rise className="pt-6">
             <SectionLabel>Forecast</SectionLabel>
             <SegmentedTabs tabs={TABS} value={tab} onChange={setTab} className="mt-3" />
+            {!loading && <ForecastAgeNote age={age} scope="forecast" className="mt-3" />}
 
-            <div className="mt-4">
+            <div className={cn("mt-4", !loading && age?.forecast === "stale" && GREYED)}>
               {loading ? (
                 <Card>
                   <p className="text-[13px] text-mist">Requesting the forecast.</p>

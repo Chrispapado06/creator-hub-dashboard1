@@ -4,8 +4,10 @@ import {
   ChevronRight, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow,
   Droplets, Eye, Moon, Sun, Wind,
 } from "lucide-react";
+import { ForecastAgeNote, GREYED } from "@/components/domain/ForecastAge";
 import {
   describeWeatherCode,
+  forecastAge,
   getMountainConditions,
   peakLocalClock,
   weatherKind,
@@ -287,11 +289,15 @@ export function ObjectiveWeather({
    * says. Nothing is drawn in them — an empty track is not a padded hour.
    */
   const tracks = Math.max(hours.length, data.hourly.requested);
+  const age = forecastAge(data.readAt);
+  const currentGreyed = age?.current === "stale" && GREYED;
 
   return shell(
     <>
+      <ForecastAgeNote age={age} scope="current" className="mb-1" />
+      <ForecastAgeNote age={age} scope="forecast" className="mb-3" />
       {/* ---- The headline: glyph + temperature left, condition + place right ---- */}
-      <div className="flex items-start justify-between gap-3">
+      <div className={cn("flex items-start justify-between gap-3", currentGreyed)}>
         <div className="flex min-w-0 items-center gap-3">
           {/* No glyph when the code was not read. Nothing stands in for it. */}
           {Big && (
@@ -334,7 +340,7 @@ export function ObjectiveWeather({
       {/* ---- The hours ahead ------------------------------------------------ */}
       {hours.length > 0 && (
         <div
-          className="mt-4 grid gap-1 border-t border-hairline pt-3.5"
+          className={cn("mt-4 grid gap-1 border-t border-hairline pt-3.5", age?.forecast === "stale" && GREYED)}
           style={{ gridTemplateColumns: `repeat(${tracks}, minmax(0, 1fr))` }}
         >
           {hours.map((h) => (
@@ -369,7 +375,7 @@ export function ObjectiveWeather({
         page to be found later — they moved one line down and stayed on Home.
         The reference has no slot for them; the card does.
       */}
-      <div className="mt-3.5 grid grid-cols-3 gap-2 border-t border-hairline pt-3.5">
+      <div className={cn("mt-3.5 grid grid-cols-3 gap-2 border-t border-hairline pt-3.5", currentGreyed)}>
         <Figure icon={Wind} label="Wind" value={windText(c.windKph)} />
         <Figure icon={Droplets} label="Precip" value={precipText(c.precipitationMm)} />
         <Figure icon={Eye} label="Visibility" value={visibilityText(c.visibilityM)} />

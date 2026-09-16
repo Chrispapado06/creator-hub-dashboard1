@@ -131,7 +131,8 @@ const LENS_W = 64;
  * bar with the rim visible above and below it, or it stops reading as an object
  * resting on the glass and starts reading as a segment of the bar itself.
  */
-const LENS_H = 46;
+const LENS_H = 54; /* was 46 for a 52px row; grown with --tabbar-h so it stays
+                       short of the taller pill's full height by the same margin. */
 
 /**
  * THE LIGHT IS THE THEME'S OWN INK, not white — and this is not pedantry, the
@@ -149,6 +150,37 @@ const LENS_H = 46;
  * than a lamp shining down, which is the honest translation of the idea.
  */
 const LIGHT = "var(--ice-snow)";
+
+/* -------------------------------------------------------------------------- */
+/* Glass, and the bar it falls back to where glass isn't real                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * OWNER'S FLIGHT NOTE, 2026-09-15: "the one specific glass navigation for new
+ * iPhones" — clarified afterwards: this is a web app, so there is no reliable
+ * way to detect "which iPhone". The honest translation is a FEATURE test, not
+ * a device test — `backdrop-filter` (blur glass) where the browser actually
+ * supports it, which lands naturally on modern iOS Safari because that is
+ * where the feature lives, and a PLAIN SOLID BAR everywhere it doesn't.
+ *
+ * WHY THIS CANNOT BE A TAILWIND CLASS. `backdrop-blur-2xl` on the plate below
+ * is applied unconditionally — Tailwind has no `@supports` variant — so on a
+ * browser without the feature the plate was still painting its glass
+ * background (`--ice-graphite` at a bare 24%) with nothing behind it to blur.
+ * That is not a bar, it is a near-invisible smear the page shows through.
+ * `@supports` is the one primitive that can tell a real browser gap from a
+ * choice, so the fallback lives there rather than behind a manual flag.
+ *
+ * SCOPED TO THIS COMPONENT, not index.css: the plate is the tab bar's own
+ * style, and `TabBar` owns it end to end.
+ */
+const GLASS_FALLBACK_CSS = `
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .icefall-tabbar-plate {
+      background: var(--ice-graphite);
+    }
+  }
+`;
 
 /**
  * A TAP THAT THE HAND FEELS — WHERE THE HAND CAN FEEL IT, AND NOWHERE ELSE.
@@ -571,6 +603,10 @@ export function TabBar() {
       style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 30px)" }}
       aria-label="Primary"
     >
+      {/* See GLASS_FALLBACK_CSS above: `.icefall-tabbar-plate` below stays
+          glass wherever the browser supports it, and turns solid where it
+          doesn't. */}
+      <style>{GLASS_FALLBACK_CSS}</style>
       <div
         ref={pill}
         /* RELEASED HERE, NOT ON EACH TAB. A pointer that goes down on a tab and
@@ -639,7 +675,7 @@ export function TabBar() {
         */}
         <span
           aria-hidden
-          className="absolute inset-0 rounded-[24px] border border-hairline-strong bg-[color-mix(in_oklab,var(--ice-graphite)_24%,transparent)] shadow-[var(--ice-shadow-pop)] backdrop-blur-2xl backdrop-saturate-150"
+          className="icefall-tabbar-plate absolute inset-0 rounded-[24px] border border-hairline-strong bg-[color-mix(in_oklab,var(--ice-graphite)_24%,transparent)] shadow-[var(--ice-shadow-pop)] backdrop-blur-2xl backdrop-saturate-150"
         />
         {/* Both the light and the ripple are clipped to the pill, so the cone
             and the circle respect its rounded corners — the wrapper owns the
@@ -668,10 +704,13 @@ export function TabBar() {
                     onPointerDown={strike}
                     onClick={() => navigate("/activity/select")}
                     aria-label="Start an activity"
-                    className="group absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[9px]"
+                    /* 56/48 -> 60/52, -9px -> -10px: scaled with the row (52 ->
+                       60, see --tabbar-h in index.css) so the disc keeps the
+                       same proportion of itself poking above the pill. */
+                    className="group absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[10px]"
                   >
                     {/* Obsidian ring punches the button through the bar. */}
-                    <span className="grid h-[56px] w-[56px] place-items-center rounded-full bg-obsidian">
+                    <span className="grid h-[60px] w-[60px] place-items-center rounded-full bg-obsidian">
                       <span
                         className={cn(
                           /* Named tokens, not `text-snow` and not the azure pair.
@@ -679,7 +718,7 @@ export function TabBar() {
                            be white on a dark canvas — on a light one it is dark
                            ink, which turned the arrow black. See --ice-start-from
                            in index.css. */
-                          "grid h-[48px] w-[48px] place-items-center rounded-full",
+                          "grid h-[52px] w-[52px] place-items-center rounded-full",
                           "text-[color:var(--ice-on-accent)]",
                           "bg-[linear-gradient(to_bottom,var(--ice-start-from),var(--ice-start-to))]",
                           "transition-all duration-200 ease-[cubic-bezier(.22,1,.36,1)]",
@@ -688,7 +727,7 @@ export function TabBar() {
                           "shadow-[0_8px_28px_-6px_var(--ice-azure-glow)]",
                         )}
                       >
-                        <Play size={18} strokeWidth={2} className="ml-0.5" fill="currentColor" />
+                        <Play size={19} strokeWidth={2} className="ml-0.5" fill="currentColor" />
                       </span>
                     </span>
                     {/*
@@ -789,7 +828,7 @@ export function TabBar() {
                     }
                   >
                     <Icon
-                      size={21}
+                      size={22}
                       strokeWidth={active ? 1.8 : 1.5}
                       className={cn(
                         "transition-colors duration-200",
@@ -798,7 +837,7 @@ export function TabBar() {
                     />
                     <span
                       className={cn(
-                        "text-[10.5px] leading-none transition-[color,opacity] duration-200",
+                        "text-[11px] leading-none transition-[color,opacity] duration-200",
                         active
                           ? "font-medium text-snow opacity-100"
                           : "text-mist opacity-[0.82] group-hover:text-snow group-hover:opacity-100",

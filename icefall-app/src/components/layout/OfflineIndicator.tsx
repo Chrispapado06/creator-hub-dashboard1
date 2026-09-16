@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloudOff } from "lucide-react";
 import { useOnline } from "@/lib/useOnline";
 import { activeSessionSummary } from "@/tracking/activeSession";
+import { isMountainModePath } from "@/mountain/paths";
+import { LAUNCH_PATHS, bootRedirectFor } from "@/mountain/boot";
 
 /**
  * The offline pill.
@@ -18,6 +21,13 @@ import { activeSessionSummary } from "@/tracking/activeSession";
 export function OfflineIndicator() {
   const online = useOnline();
   const [recording, setRecording] = useState(false);
+  // Mountain mode's top bar carries its own signal pill; this one would sit on it.
+  const { pathname } = useLocation();
+  const inMountainMode = isMountainModePath(pathname);
+  // ...and so does the Mountain boot screen, whose whole hero is "No signal"
+  // (mockup spec §1: no header, no tab bar). That screen lives on a LAUNCH path,
+  // not a /mountain one, so the check above does not cover it.
+  const onMountainBoot = bootRedirectFor(pathname) !== null && LAUNCH_PATHS.includes(pathname);
 
   // Re-checked when connectivity flips rather than polled — the pill only ever
   // renders on that transition.
@@ -29,7 +39,7 @@ export function OfflineIndicator() {
 
   return (
     <AnimatePresence>
-      {!online && (
+      {!online && !inMountainMode && !onMountainBoot && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}

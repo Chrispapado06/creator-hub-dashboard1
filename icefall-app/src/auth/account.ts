@@ -20,6 +20,7 @@
  *    than saying "check your inbox" unconditionally.
  */
 import { supabase, REMEMBER_KEY } from "@/backend/client";
+import { APP_RELEASED } from "@/auth/release";
 
 /**
  * Microsoft's provider id in Supabase is `azure`, NOT `microsoft`.
@@ -233,8 +234,16 @@ export async function signOutEverywhere(): Promise<AuthOutcome> {
  * a handle" are byte-for-byte identical: a session whose profile has a null
  * username. Routing on the STATE rather than on how they arrived is why social
  * login needs no second flow.
+ *
+ * "holding" IS THE FOURTH STATE, added 2026-09-12 for Charlie's post-launch-
+ * announcement waitlist: a session that HAS a handle and has NOT onboarded,
+ * while `APP_RELEASED` (`auth/release.ts`) is still false. It sits between
+ * "handle" and "onboarding" in the same sequence every arrival already walks
+ * through — nobody is asked the onboarding questions early, and flipping
+ * `APP_RELEASED` is the only thing that ever turns a "holding" answer into an
+ * "onboarding" one for the same account.
  */
-export type NextStep = "handle" | "onboarding" | "home" | "signed-out" | "offline";
+export type NextStep = "handle" | "holding" | "onboarding" | "home" | "signed-out" | "offline";
 
 export async function nextStepForSession(): Promise<NextStep> {
   if (!supabase) return "offline";
@@ -281,7 +290,14 @@ export async function nextStepForSession(): Promise<NextStep> {
     .eq("id", sess.session.user.id)
     .maybeSingle();
 
-  return athlete?.onboarded_at ? "home" : "onboarding";
+  if (athlete?.onboarded_at) return "home";
+
+  // NOT ONBOARDED, AND HELD, UNTIL `APP_RELEASED` SAYS OTHERWISE. This is the
+  // one line that turns every not-yet-onboarded account into a "holding"
+  // answer instead of "onboarding" while ICEFALL is not yet open — and the one
+  // line that stops doing that the moment `APP_RELEASED` is flipped, with no
+  // other change anywhere in this function.
+  return APP_RELEASED ? "onboarding" : "holding";
 }
 
 /**

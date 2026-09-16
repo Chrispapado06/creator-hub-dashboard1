@@ -68,23 +68,19 @@ const MAX_BODY = 4000;
 const STORY_HOURS = [12, 24, 48] as const;
 
 /**
- * WHERE A PHOTO OR A VIDEO WOULD GO — and why it is `null`.
+ * WHERE A PHOTO OR A VIDEO ACTUALLY GOES.
  *
- * There is exactly one storage bucket in `icefall-supabase/migrations`:
- * `operator-media`, created by 20260828130000. It is company-scoped by
- * construction — the insert policy requires `is_company_admin` over the
- * company id in the FIRST path segment — so an athlete cannot write to it, and
- * pointing personal posts at it would be a path traversal wearing a product
- * name. No bucket for personal post media exists.
- *
- * Creating one is a MIGRATION, and migrations are the owner's to gate (rule 3),
- * so this is left as a null constant rather than a hopeful bucket name: a
- * hardcoded name would put a file picker in front of a climber that could only
- * ever end in a storage error. While it is null the media rows are LOCKED
- * STATEMENTS — they say what the rule is and why nothing can be attached yet —
- * and `uploadMedia` below is the one place that changes when the bucket lands.
+ * `post-media`, created by `icefall-supabase/migrations/20260902160000_post_media_bucket.sql`
+ * (private, owner-folder-scoped, `<author_uid>/<filename>`), with the video/
+ * identity-verification rule enforced server-side by
+ * `20260902200000_post_media_identity_gate.sql`. The same bucket already backs
+ * highlights, summit logs and the profile surfaces (`social/highlights.ts`,
+ * `social/summits.ts`, `social/posts.ts`, `social/groupPosts.ts`,
+ * `components/social/CreateHighlight.tsx`, `components/social/HighlightsRow.tsx`,
+ * `screens/explore/AthleteProfile.tsx`) — this constant was the one place left
+ * pointing at nothing while those shipped around it.
  */
-const POST_MEDIA_BUCKET: string | null = null;
+const POST_MEDIA_BUCKET: string | null = "post-media";
 
 const NO_MEDIA_STORE =
   "ICEFALL has no media store for personal posts yet, so there is nowhere to put a file — the only bucket that exists belongs to expedition companies. Words post now; photo and video open the moment that store exists.";
@@ -184,6 +180,22 @@ function useComposerAccount(): Account {
 type Attachment = { file: File; url: string; kind: "image" | "video" };
 
 type Uploaded = { path: string; meta: Record<string, unknown> };
+
+/**
+ * `posts.media_gallery` (20260916120000) — the CHECK on that column allows
+ * 1-10, but this component only ever routes exactly-one-image through the
+ * classic `media_path`/`media_meta` fields (see `publish` below), so in
+ * practice this never holds fewer than two elements.
+ */
+const MAX_IMAGES = 10;
+
+const CANNOT_MIX_VIDEO_WITH_IMAGES =
+  "A post is one video or up to 10 images, never both. Remove the video you already picked before adding photos.";
+const CANNOT_MIX_IMAGES_WITH_VIDEO =
+  "A post is one video or up to 10 images, never both. Remove the photos you already picked before adding a video.";
+const IMAGE_CAP_NOTICE = `Up to ${MAX_IMAGES} images — kept the first ${MAX_IMAGES}.`;
+const GALLERY_UPLOAD_FAILED =
+  "One of those images could not be stored, so nothing was posted — none of them are attached to anything. Your words are still here.";
 
 /**
  * The single place that knows how post media reaches the server.
@@ -304,10 +316,13 @@ export const HOUSE_RULES_BLOCKING_POST =
 export function Composer({
   onPosted,
   className,
+  startAsStory = false,
 }: {
   /** Fired only after the server returned a row id. Nothing optimistic. */
   onPosted?(): void;
   className?: string;
+  /** Opens with the New story toggle already on — the + on your own story circle uses this. */
+  startAsStory?: boolean;
 }): JSX.Element {
   const account = useComposerAccount();
 
@@ -363,33 +378,79 @@ export function Composer({
   const rulesBlock = houseRulesBlockPublish(houseRules);
 
   const [body, setBody] = useState("");
-  const [isStory, setIsStory] = useState(false);
+  const [isStory, setIsStory] = useState(startAsStory);
   const [hours, setHours] = useState<number>(24);
-  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  /**
+   * ONE ARRAY FOR BOTH ROWS. A post is one video OR up to ten images, never
+   * both, so a single list plus the kind of its first element fully describes
+   * what is picked — a separate "video slot" and "image slot" could disagree
+   * with each other, and that disagreement is exactly the state this file
+   * must never be in. Video keeps its one-element ceiling from the row itself
+   * (`wantKind === "video"` never reads more than `files[0]`), so nothing here
+   * newly allows more than one video.
+   */
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  /** Informational, not an error — the honest "kept the first 10" notice. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [posted, setPosted] = useState<{ endsAt: string | null } | null>(null);
   const picker = useRef<HTMLInputElement | null>(null);
   const wantKind = useRef<"image" | "video">("image");
+  /** Every object URL this component has ever created and not yet revoked. */
+  const objectUrls = useRef<Set<string>>(new Set());
+
+  function makeAttachment(file: File, kind: "image" | "video"): Attachment {
+    const url = URL.createObjectURL(file);
+    objectUrls.current.add(url);
+    return { file, url, kind };
+  }
+
+  function releaseAttachments(list: Attachment[]) {
+    for (const a of list) {
+      URL.revokeObjectURL(a.url);
+      objectUrls.current.delete(a.url);
+    }
+  }
 
   /**
    * `accept` is set on the element rather than through a prop. Both rows share
    * one input, and a ref does not re-render — set as a prop it would carry the
    * PREVIOUS row's filter, so tapping "Video" after "Photo" would open an image
    * picker. Setting it immediately before `.click()` cannot go stale.
+   *
+   * `multiple` travels the same way and for the same reason: the photo row
+   * needs it, the video row must never have it — a post carries one video,
+   * full stop — and one shared input can only hold one answer at a time.
    */
   function openPicker(kind: "image" | "video") {
     wantKind.current = kind;
-    if (picker.current) picker.current.accept = kind === "video" ? "video/*" : "image/*";
+    if (picker.current) {
+      picker.current.accept = kind === "video" ? "video/*" : "image/*";
+      picker.current.multiple = kind === "image";
+    }
     picker.current?.click();
   }
 
-  // An object URL survives the component that made it, so the preview is
-  // released when it is replaced and when the composer goes away.
+  function removeAttachment(index: number) {
+    setAttachments((prev) => {
+      const removed = prev[index];
+      if (removed) releaseAttachments([removed]);
+      return prev.filter((_, i) => i !== index);
+    });
+    setNotice(null);
+  }
+
+  // Every object URL this component ever made, released when the composer
+  // itself goes away — the per-item releases above cover replacement and
+  // removal; this is only the "the whole thing unmounted" case they cannot
+  // reach.
   useEffect(() => {
-    if (!attachment) return;
-    return () => URL.revokeObjectURL(attachment.url);
-  }, [attachment]);
+    return () => {
+      objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
+      objectUrls.current.clear();
+    };
+  }, []);
 
   const verified = account.status === "ready" ? account.verified : null;
   const canWrite = account.status === "ready";
@@ -407,15 +468,46 @@ export function Composer({
     setBusy(true);
     setFailure(null);
 
-    let media: Uploaded | null = null;
-    if (attachment) {
-      const result = await uploadMedia(account.uid, attachment);
+    // THREE SHAPES, and the row only ever gets one of them: nothing picked
+    // (both null), exactly one image or one video (the classic
+    // `media_path`/`media_meta` pair — untouched, byte for byte, from before
+    // this feature existed), or 2-10 images (`media_gallery`, and the classic
+    // pair stays null). Which branch runs is decided ONCE, by
+    // `attachments.length`, and every field below is set from that same
+    // decision — there is no path where two of the three end up non-null.
+    let mediaPath: string | null = null;
+    let mediaMeta: Record<string, unknown> | null = null;
+    let mediaGallery: Record<string, unknown>[] | null = null;
+
+    if (attachments.length === 1) {
+      const result = await uploadMedia(account.uid, attachments[0]);
       if (!result.ok) {
         setFailure(result.message);
         setBusy(false);
         return;
       }
-      media = result.uploaded;
+      mediaPath = result.uploaded.path;
+      mediaMeta = result.uploaded.meta;
+    } else if (attachments.length > 1) {
+      const uploaded: Uploaded[] = [];
+      for (const a of attachments) {
+        const result = await uploadMedia(account.uid, a);
+        if (!result.ok) {
+          // The post is never created below without every upload having
+          // already succeeded, so no row ever points at a partial batch. What
+          // CAN happen is a few images landing in storage before the one that
+          // fails — nothing reads them without a row naming their path, but
+          // leaving them there forever is untidy, so a best-effort sweep.
+          if (uploaded.length > 0 && POST_MEDIA_BUCKET) {
+            void untyped.storage.from(POST_MEDIA_BUCKET).remove(uploaded.map((u) => u.path));
+          }
+          setFailure(GALLERY_UPLOAD_FAILED);
+          setBusy(false);
+          return;
+        }
+        uploaded.push(result.uploaded);
+      }
+      mediaGallery = uploaded.map((u) => ({ path: u.path, ...u.meta }));
     }
 
     const endsAt = isStory ? new Date(Date.now() + hours * 3_600_000).toISOString() : null;
@@ -433,8 +525,9 @@ export function Composer({
         author_kind: "profile",
         body: trimmed,
         expires_at: endsAt,
-        media_path: media?.path ?? null,
-        media_meta: media?.meta ?? null,
+        media_path: mediaPath,
+        media_meta: mediaMeta,
+        media_gallery: mediaGallery,
       })
       .select("id")
       .single();
@@ -446,7 +539,9 @@ export function Composer({
     }
 
     setBody("");
-    setAttachment(null);
+    releaseAttachments(attachments);
+    setAttachments([]);
+    setNotice(null);
     setIsStory(false);
     setPosted({ endsAt });
     onPosted?.();
@@ -589,7 +684,13 @@ export function Composer({
           icon={ImageIcon}
           title="Photo"
           state={POST_MEDIA_BUCKET ? "open" : "blocked"}
-          detail={POST_MEDIA_BUCKET ? "Open to everyone." : NO_MEDIA_STORE}
+          detail={
+            !POST_MEDIA_BUCKET
+              ? NO_MEDIA_STORE
+              : attachments[0]?.kind === "image"
+                ? `${attachments.length} of ${MAX_IMAGES} selected. Tap to add more.`
+                : "Open to everyone. Choose up to 10 at once."
+          }
           onPick={() => openPicker("image")}
         />
         <MediaRow
@@ -625,30 +726,93 @@ export function Composer({
         className="hidden"
         accept="image/*"
         onChange={(e) => {
-          const file = e.target.files?.[0];
+          const files = Array.from(e.target.files ?? []);
           e.target.value = "";
-          if (!file) return;
+          if (files.length === 0) return;
           setFailure(null);
-          setAttachment({ file, url: URL.createObjectURL(file), kind: wantKind.current });
+
+          const kind = wantKind.current;
+          const existingKind = attachments[0]?.kind ?? null;
+
+          // A post is one video OR up to ten images, never both — picking one
+          // while the other is already on the tray is refused, plainly, same
+          // as any other rule this composer enforces before the network is
+          // ever touched.
+          if (existingKind && existingKind !== kind) {
+            setFailure(kind === "video" ? CANNOT_MIX_VIDEO_WITH_IMAGES : CANNOT_MIX_IMAGES_WITH_VIDEO);
+            return;
+          }
+
+          if (kind === "video") {
+            // One slot. Re-picking replaces it, and the previous object URL
+            // is released rather than left to leak.
+            releaseAttachments(attachments);
+            setAttachments([makeAttachment(files[0], "video")]);
+            setNotice(null);
+            return;
+          }
+
+          const incoming = files.map((file) => makeAttachment(file, "image"));
+          const combined = [...attachments, ...incoming];
+          if (combined.length > MAX_IMAGES) {
+            const kept = combined.slice(0, MAX_IMAGES);
+            releaseAttachments(combined.slice(MAX_IMAGES));
+            setAttachments(kept);
+            setNotice(IMAGE_CAP_NOTICE);
+          } else {
+            setAttachments(combined);
+            setNotice(null);
+          }
         }}
       />
 
-      {attachment && (
+      {attachments.length === 1 && (
+        // Exactly what this tile has always been — one image or one video,
+        // full width — so a single pick neither looks nor behaves any
+        // differently than it did before galleries existed.
         <div className="relative overflow-hidden rounded-tile border border-hairline">
-          {attachment.kind === "video" ? (
-            <video src={attachment.url} controls className="h-[150px] w-full bg-obsidian object-contain" />
+          {attachments[0].kind === "video" ? (
+            <video src={attachments[0].url} controls className="h-[150px] w-full bg-obsidian object-contain" />
           ) : (
-            <img src={attachment.url} alt="" aria-hidden className="h-[150px] w-full object-cover" />
+            <img src={attachments[0].url} alt="" aria-hidden className="h-[150px] w-full object-cover" />
           )}
           <button
             type="button"
-            onClick={() => setAttachment(null)}
+            onClick={() => removeAttachment(0)}
             aria-label="Remove attachment"
             className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-obsidian/75 text-snow"
           >
             <X size={14} strokeWidth={2} />
           </button>
         </div>
+      )}
+
+      {attachments.length > 1 && (
+        // 2-10 images only — video never reaches this branch, it is capped to
+        // one element above. Same rounded/bordered tile language as the
+        // single-attachment preview, just smaller and laid out in a row.
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {attachments.map((a, i) => (
+            <div
+              key={a.url}
+              className="relative h-[92px] w-[92px] shrink-0 overflow-hidden rounded-tile border border-hairline"
+            >
+              <img src={a.url} alt="" aria-hidden className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => removeAttachment(i)}
+                aria-label={`Remove image ${i + 1}`}
+                className="absolute right-1 top-1 grid h-8 w-8 place-items-center rounded-full bg-obsidian/75 text-snow"
+              >
+                <X size={13} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {notice && !failure && (
+        <p className="text-[11px] leading-relaxed text-mist-dim">{notice}</p>
       )}
 
       {failure && (

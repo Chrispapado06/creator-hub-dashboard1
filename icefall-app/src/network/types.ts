@@ -179,6 +179,28 @@ export interface Expedition {
   memberIds: string[];
   createdBy: string;
   createdAt: string;
+  /**
+   * The id of the group on ICEFALL's server this one was moved to, once its
+   * owner tapped Move (structure plan §2).
+   *
+   * OPTIONAL, SO NO STORAGE KEY IS BUMPED, and written ONLY after the server
+   * handed a group back and that group was read again — an id written on the
+   * strength of a request that may not have landed would send `/social/groups/
+   * expedition-…` to a page that is not there.
+   *
+   * It is not a deletion. The record stays on this phone, with its notes,
+   * sessions and log, because those were written privately and were never part
+   * of what moves.
+   */
+  movedTo?: string;
+  /**
+   * The ICEFALL account the move was made under, as `auth.uid()` gave it.
+   *
+   * Phones are shared. Knowing WHOSE account a group was published under is
+   * what lets the next person to sign in on this phone be told that this one
+   * has already gone somewhere, rather than being offered it as their own.
+   */
+  movedBy?: string;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1,24 +1,48 @@
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, SectionLabel, Metric } from "@/components/ui/primitives";
-import { Rise, Screen, ScreenHeader, SegmentedTabs, Stagger } from "@/components/layout/chrome";
+import { Button, SectionLabel } from "@/components/ui/primitives";
+import { Screen, ScreenHeader, SegmentedTabs } from "@/components/layout/chrome";
 import { ActivityCalendar } from "@/components/domain/ActivityCalendar";
-import { ActivityCard } from "@/components/domain/cards";
-import { IcefallMark } from "@/components/ui/IcefallMark";
 import { cn } from "@/lib/utils";
-import { MODE_LABELS, fmtDistance, fmtElevation, fmtHours } from "@/lib/format";
 import {
-  summarise,
-  useActivityFeed,
-  useRecordedActivities,
-  weeklyBuckets,
-} from "@/tracking/feed";
+  MODE_LABELS,
+  fmtDistance,
+  fmtDurationCompact,
+  fmtElevation,
+  fmtHours,
+} from "@/lib/format";
+import { summarise, useActivityFeed, useRecordedActivities } from "@/tracking/feed";
 import type { Activity, SportMode } from "@/types";
 
-/* PH-02 — Performance and Routes removed at the owner's request. History and
-   Calendar are two ways of reading the same recorded sessions; the other two
-   were analyses layered on top of them. */
+/**
+ * "Minimal timeline" — chosen 14 September 2026 from three redesign
+ * directions built for review (see the ICEFALL handbook, §18.54). The other
+ * two ("Trends & records", "Journal") and the three temporary
+ * `/dev/activity-redesign-*` routes are removed; this is now simply the
+ * page.
+ *
+ * The instinct here is the opposite of a chart-heavy or image-heavy page:
+ * type and spacing carry it, not artwork.
+ *  - No cards. Rows are separated by hairline rules and whitespace, per the
+ *    house "no boxes" rule — the only element that reads as a distinct
+ *    object is the consistency strip, and even that is a bare row of bars,
+ *    not a panel.
+ *  - The one deliberate flourish is `font-serif` (Instrument Serif) — already
+ *    declared as a design token in `index.css` but unused anywhere in the
+ *    app before this — used only for the two things worth making memorable:
+ *    the big totals and the month names. Every number that has to be
+ *    scanned and compared (the per-activity list) stays in the app's
+ *    ordinary tabular sans, in fixed-width columns, so it lines up.
+ *  - The "Consistency" strip answers "how many days this month has this
+ *    athlete actually gone out", counted from real recorded activities
+ *    grouped by calendar day — not an invented streak or score. A day with
+ *    no activity draws as an empty tick, not a zero to feel bad about.
+ *
+ * The History/Calendar toggle predates this redesign and is unchanged:
+ * Calendar renders `ActivityCalendar` exactly as it always has.
+ */
+
 const VIEWS = [
   { value: "activities", label: "History" },
   { value: "calendar", label: "Calendar" },
@@ -47,6 +71,29 @@ export default function ActivityHistory() {
   );
   const totals = useMemo(() => summarise(list), [list]);
 
+  // Grouped by calendar month. `list` is already newest-first (see
+  // `useActivityFeed`), and a Map keeps first-insertion order, so the groups
+  // come out newest-first too without a second sort.
+  const groups = useMemo(() => {
+    const map = new Map<string, Activity[]>();
+    for (const a of list) {
+      const d = new Date(a.startedAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
+      const arr = map.get(key);
+      if (arr) arr.push(a);
+      else map.set(key, [a]);
+    }
+    return [...map.entries()].map(([key, items]) => ({
+      key,
+      label: new Date(items[0].startedAt).toLocaleDateString("en-GB", {
+        month: "long",
+        year: "numeric",
+      }),
+      items,
+      totals: summarise(items),
+    }));
+  }, [list]);
+
   return (
     <Screen padded={false}>
       <div className="px-5">
@@ -65,46 +112,70 @@ export default function ActivityHistory() {
       </div>
 
       {view === "activities" && (
-        <div className="px-5">
-          <div className="no-scrollbar mt-5 overflow-x-auto">
-            <div className="flex gap-2">
+        <>
+          <div className="px-5">
+            {/* ---- Filters — text, not pills; an underline instead of a chip --- */}
+            <div className="no-scrollbar -mx-1 mt-5 flex gap-x-5 overflow-x-auto px-1">
               {FILTERS.map((f) => (
                 <button
                   key={f.value}
                   type="button"
                   onClick={() => setFilter(f.value)}
                   className={cn(
-                    "shrink-0 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors",
+                    "shrink-0 border-b pb-2 text-[12.5px] transition-colors",
                     filter === f.value
-                      ? "border-azure/50 bg-azure/[0.08] text-snow"
-                      : "border-hairline text-mist-dim hover:text-mist",
+                      ? "border-azure text-snow"
+                      : "border-transparent text-mist-dim hover:text-mist",
                   )}
                 >
                   {f.label}
                 </button>
               ))}
             </div>
+
+            {/* ---- Totals — the masthead figures, set in the display serif ---- */}
+            <div className="mt-7 flex items-start gap-8">
+              <TotalFigure value={fmtDistance(totals.distanceKm, 0)} unit="km" label="Distance" />
+              <TotalFigure value={fmtElevation(totals.elevationM)} unit="m" label="Ascent" />
+              <TotalFigure value={fmtHours(totals.hours)} label="Time" />
+            </div>
+
+            {/* ---- Consistency — a real, honest read of this month ------------ */}
+            <MonthPulse feed={feed} />
           </div>
 
-          <Card className="mt-5">
-            <div className="grid grid-cols-3 gap-2">
-              <Metric size="sm" value={fmtDistance(totals.distanceKm, 0)} unit="km" label="Distance" />
-              <Metric size="sm" value={fmtElevation(totals.elevationM)} unit="m" label="Ascent" />
-              <Metric size="sm" value={fmtHours(totals.hours)} label="Time" />
-            </div>
-          </Card>
-
-          <Stagger className="mt-5 space-y-2.5">
-            {list.map((a) => (
-              <Rise key={a.id}>
-                <ActivityCard activity={a} />
-              </Rise>
-            ))}
-            {list.length === 0 && (
-              <p className="py-12 text-center text-[13px] text-mist-dim">Nothing recorded yet.</p>
+          <div className="px-5 pb-8">
+            {groups.length === 0 && (
+              <p className="py-16 text-center text-[13px] text-mist-dim">Nothing recorded yet.</p>
             )}
-          </Stagger>
-        </div>
+
+            {groups.map((g, gi) => (
+              <div key={g.key} className={cn(gi > 0 && "mt-7 border-t border-hairline pt-6")}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="font-serif text-[17px] italic tracking-tight text-snow">
+                    {g.label}
+                  </p>
+                  <p className="tnum shrink-0 text-[11px] text-mist-dim">
+                    {g.items.length} {g.items.length === 1 ? "activity" : "activities"}
+                    {g.totals.count > 0 && (
+                      <>
+                        {" "}
+                        · {fmtDistance(g.totals.distanceKm, 0)} km ·{" "}
+                        {fmtElevation(g.totals.elevationM)} m
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                <div className="mt-1 divide-y divide-hairline">
+                  {g.items.map((a) => (
+                    <ActivityRow key={a.id} activity={a} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {view === "calendar" && <ActivityCalendar recorded={recorded} />}
@@ -113,120 +184,134 @@ export default function ActivityHistory() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Stats                                                                       */
+/* TotalFigure — the one place this direction spends its display type         */
 /* -------------------------------------------------------------------------- */
 
-function Stats({ feed, recordedCount }: { feed: Activity[]; recordedCount: number }) {
-  const weeks = useMemo(() => weeklyBuckets(feed, 8), [feed]);
-  const maxDist = Math.max(...weeks.map((w) => w.distanceKm), 1);
-
-  const byMode = useMemo(() => {
-    const m = new Map<string, { count: number; distanceKm: number; elevationM: number }>();
-    for (const a of feed) {
-      // Hand-rolled, so it needs the guard `summarise` now carries by itself.
-      if (a.simulated) continue;
-      const cur = m.get(a.mode) ?? { count: 0, distanceKm: 0, elevationM: 0 };
-      m.set(a.mode, {
-        count: cur.count + 1,
-        distanceKm: cur.distanceKm + a.distanceKm,
-        elevationM: cur.elevationM + a.elevationGainM,
-      });
-    }
-    return [...m.entries()].sort((a, b) => b[1].distanceKm - a[1].distanceKm);
-  }, [feed]);
-
-  const maxModeDist = Math.max(...byMode.map(([, v]) => v.distanceKm), 1);
-  const totals = summarise(feed);
-
+function TotalFigure({ value, unit, label }: { value: string; unit?: string; label: string }) {
   return (
-    <Stagger className="px-5 pt-5">
-      <Rise>
-        <SectionLabel>Last eight weeks</SectionLabel>
-        <Card className="mt-3">
-          <div className="flex items-end justify-between gap-1.5">
-            {weeks.map((w, i) => (
-              <div key={i} className="flex flex-1 flex-col items-center gap-2">
-                <div className="flex h-24 w-full items-end justify-center">
-                  <div
-                    className={cn(
-                      "w-full max-w-[10px] rounded-full",
-                      i === weeks.length - 1 ? "bg-azure" : "bg-white/22",
-                    )}
-                    style={{ height: `${Math.max(4, (w.distanceKm / maxDist) * 100)}%` }}
-                  />
-                </div>
-                <span className="tnum text-[9px] text-mist-dim">
-                  {w.start.getDate()}/{w.start.getMonth() + 1}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="section-label mt-4">Distance per week</p>
-        </Card>
-      </Rise>
-
-      <Rise className="pt-6">
-        <SectionLabel>Totals</SectionLabel>
-        <Card className="mt-3">
-          <div className="grid grid-cols-2 gap-y-5">
-            <Metric size="sm" value={String(totals.count)} label="Activities" />
-            <Metric size="sm" value={fmtDistance(totals.distanceKm, 0)} unit="km" label="Distance" />
-            <Metric size="sm" value={fmtElevation(totals.elevationM)} unit="m" label="Ascent" />
-            <Metric size="sm" value={fmtHours(totals.hours)} label="Moving time" />
-          </div>
-          {totals.calories > 0 && (
-            <p className="tnum mt-5 border-t border-hairline pt-4 text-[12px] text-mist-dim">
-              {Math.round(totals.calories).toLocaleString("en-GB")} kcal estimated across all
-              activities
-            </p>
-          )}
-        </Card>
-      </Rise>
-
-      <Rise className="pt-6">
-        <SectionLabel>Breakdown</SectionLabel>
-        <Card className="mt-3" inset={false}>
-          <div className="px-4">
-            {byMode.map(([mode, v]) => (
-              <div key={mode} className="border-b border-hairline py-3 last:border-0">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[13px] text-snow">{MODE_LABELS[mode] ?? mode}</span>
-                  <span className="tnum text-[12px] text-mist">
-                    {fmtDistance(v.distanceKm, 0)} km · {v.count}
-                  </span>
-                </div>
-                <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.06]">
-                  <div
-                    className="h-full rounded-full bg-azure/70"
-                    style={{ width: `${(v.distanceKm / maxModeDist) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </Rise>
-
-      {recordedCount === 0 && (
-        <Rise className="pt-6">
-          <p className="text-center text-[12px] leading-relaxed text-mist-dim">
-            Personal records appear once you record an activity with ICEFALL.
-          </p>
-        </Rise>
-      )}
-    </Stagger>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Journey — every route you have travelled, in one frame                     */
-
-function Line({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-hairline py-3 text-[13px] last:border-0">
-      <span className="text-mist-dim">{label}</span>
-      <span className="tnum text-snow">{value}</span>
+    <div>
+      <p className="font-serif text-[32px] italic leading-none tracking-tight text-snow">
+        {value}
+        {unit && (
+          <span className="ml-1 font-sans text-[12px] font-normal not-italic text-mist">
+            {unit}
+          </span>
+        )}
+      </p>
+      <p className="section-label mt-2.5">{label}</p>
     </div>
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* ActivityRow — flat, tabular, no card                                       */
+/* -------------------------------------------------------------------------- */
+
+function ActivityRow({ activity: a }: { activity: Activity }) {
+  const d = new Date(a.startedAt);
+  const day = d.getDate();
+  const weekday = d.toLocaleDateString("en-GB", { weekday: "short" }).toUpperCase();
+
+  return (
+    <Link to={`/activity/${a.id}`} className="flex items-center gap-3 py-3">
+      <div className="w-8 shrink-0 text-center">
+        <p className="tnum text-[14px] font-light leading-none text-snow">{day}</p>
+        <p className="mt-1 text-[8.5px] tracking-[0.08em] text-mist-dim">{weekday}</p>
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13.5px] text-snow">
+          {a.title}
+          {a.simulated && (
+            <span className="ml-2 text-[9.5px] uppercase tracking-[0.1em] text-alert/80">
+              Sim
+            </span>
+          )}
+        </p>
+        <p className="mt-0.5 truncate text-[11px] text-mist-dim">
+          {MODE_LABELS[a.mode] ?? a.mode} · {a.location}
+        </p>
+      </div>
+
+      {/* Fixed-width numeric columns, repeated identically on every row, so
+          distance / elevation / time line up down the whole list. */}
+      <div className="tnum grid shrink-0 grid-cols-[48px_48px_44px] gap-3 text-right text-[12px] text-mist">
+        <span>
+          {fmtDistance(a.distanceKm, 0)}
+          <span className="ml-0.5 text-[9.5px] text-mist-dim">km</span>
+        </span>
+        <span>
+          {fmtElevation(a.elevationGainM)}
+          <span className="ml-0.5 text-[9.5px] text-mist-dim">m</span>
+        </span>
+        <span>{fmtDurationCompact(a.durationSec)}</span>
+      </div>
+    </Link>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* MonthPulse — real day-by-day presence for the current calendar month       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Not a streak counter. Streaks imply a scoring system this app has no real
+ * logic for — this only ever answers a question ICEFALL can actually
+ * measure: which of the days that have happened so far this month carry a
+ * recorded, non-simulated activity. Weight (bar height) is that day's real
+ * elevation gain relative to the month's busiest day so far, matching the
+ * same elevation-weighted convention `ActivityCalendar` already uses — a big
+ * climbing day should look bigger than a short flat one, not the same size.
+ */
+function MonthPulse({ feed }: { feed: Activity[] }) {
+  const now = useMemo(() => new Date(), []);
+  const year = now.getFullYear();
+  const monthIdx = now.getMonth();
+  const daysElapsed = now.getDate();
+  const monthName = now.toLocaleDateString("en-GB", { month: "long" });
+
+  const byDay = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const a of feed) {
+      if (a.simulated) continue;
+      const d = new Date(a.startedAt);
+      if (d.getFullYear() !== year || d.getMonth() !== monthIdx) continue;
+      m.set(d.getDate(), (m.get(d.getDate()) ?? 0) + a.elevationGainM);
+    }
+    return m;
+  }, [feed, year, monthIdx]);
+
+  const peak = Math.max(1, ...byDay.values());
+  const activeDays = byDay.size;
+
+  return (
+    <div className="mt-7 border-b border-hairline pb-6">
+      <SectionLabel
+        action={
+          <p className="tnum text-[11px] text-mist-dim">
+            <span className="text-snow">{activeDays}</span> of {daysElapsed} days active in{" "}
+            {monthName}
+          </p>
+        }
+      >
+        Consistency
+      </SectionLabel>
+
+      <div className="mt-3 flex items-end gap-[3px]">
+        {Array.from({ length: daysElapsed }, (_, i) => {
+          const day = i + 1;
+          const v = byDay.get(day) ?? 0;
+          const pct = v > 0 ? Math.max(18, (v / peak) * 100) : 0;
+          return (
+            <div key={day} className="flex h-7 flex-1 items-end" title={`${day} ${monthName}`}>
+              <div
+                className={cn("w-full rounded-full", v > 0 ? "bg-azure/75" : "bg-white/[0.07]")}
+                style={{ height: v > 0 ? `${pct}%` : "2px" }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

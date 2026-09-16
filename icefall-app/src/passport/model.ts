@@ -7,6 +7,7 @@ import type { RecordedActivity } from "@/tracking/types";
 import type { CoachProfile, SavedObjective } from "@/state/AppState";
 import type { Expedition } from "@/network/types";
 import type { ExperienceLevel, Goal, Summit } from "@/types";
+import { pickPrimaryGoal } from "@/objectives/primaryGoal";
 
 /**
  * The MOUNTAIN PASSPORT — the athlete's mountaineering record as a document.
@@ -272,8 +273,14 @@ export interface PassportTechnicalLevel {
   note: string;
 }
 
-export interface PassportExpeditions {
+/**
+ * "Groups started" (structure plan §3.5): server groups the athlete organises,
+ * plus groups saved on this phone and not yet moved. Demo ids are never counted.
+ */
+export interface PassportGroupsStarted {
   count: number;
+  /** False when the server count could not be read; `count` is then phone groups only. */
+  serverCounted: boolean;
   note: string;
 }
 
@@ -306,7 +313,7 @@ export interface Passport {
   summits: PassportSummit[];
   /** Set when the summit log is empty — the pages render the reason. */
   summitsReason?: Unavailable;
-  expeditions: PassportExpeditions;
+  groupsStarted: PassportGroupsStarted;
   technicalLevel: PassportTechnicalLevel;
   /** Seven, ordered high to low, so the page reads as an altimeter. */
   bands: PassportBand[];
@@ -430,7 +437,10 @@ export interface PassportInput {
   goals: Goal[];
   activities: RecordedActivity[];
   coachProfile: CoachProfile;
-  expeditions: Expedition[];
+  /** Groups saved on this phone and not yet moved (`groups/local/phoneGroups.ts`). */
+  phoneGroups: Expedition[];
+  /** Server groups the athlete organises, or null when that could not be read. */
+  organisedGroups: number | null;
   /**
    * Certificates the athlete recorded, keyed to competences by LABEL.
    *
@@ -447,6 +457,8 @@ export interface PassportInput {
   }[];
   /** Injectable for tests. Defaults to now. */
   now?: Date;
+  /** Objectives with a debrief on this device — they get no day of grace (`objectives/primaryGoal.ts`). */
+  debriefedGoalIds?: ReadonlySet<string>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -870,7 +882,7 @@ export function buildPassport(input: PassportInput): Passport {
 
   /* ---- Identity ----------------------------------------------------------- */
 
-  const primary = active[0];
+  const primary = pickPrimaryGoal(input.goals, now, input.debriefedGoalIds);
 
   return {
     identity: {
@@ -884,12 +896,14 @@ export function buildPassport(input: PassportInput): Passport {
     highestAltitude: highestAltitude(input.activities, input.coachProfile, merged),
     summits,
     summitsReason: summits.length === 0 ? "not-reported" : undefined,
-    expeditions: {
-      count: input.expeditions.length,
-      // Named precisely. These are trips the athlete created in ICEFALL, on this
-      // device — not expeditions undertaken, and not published anywhere, because
-      // there is no network to publish them to.
-      note: "Expeditions you have created in ICEFALL. Held on this device; none has been published, and creating one is not undertaking it.",
+    groupsStarted: {
+      // Started, not undertaken: a group is a plan, not an ascent.
+      count: (input.organisedGroups ?? 0) + input.phoneGroups.length,
+      serverCounted: input.organisedGroups !== null,
+      note:
+        input.organisedGroups !== null
+          ? "Groups you organise on ICEFALL, plus groups saved on this phone."
+          : "Groups saved on this phone, because groups on ICEFALL's server could not be counted.",
     },
     technicalLevel: technicalLevel(input.coachProfile, input.onboarded, input.declaredExperience),
     bands,

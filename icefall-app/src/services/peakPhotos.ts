@@ -772,7 +772,12 @@ export function peakPhotoKey(lat?: number, lon?: number): string | null {
 export function harvestedPhoto(lat?: number, lon?: number): HarvestedPhoto | undefined {
   const key = peakPhotoKey(lat, lon);
   const packed = key && bundle ? bundle.photos[key] : undefined;
-  return packed ? unpack(packed) : undefined;
+  if (!packed) return undefined;
+  const photo = unpack(packed);
+  // OFFLINE: a Commons thumbnail can't be fetched with no network, and a broken
+  // <img> is worse than the captioned stand-in. Local rows still serve.
+  if (OFFLINE && /^https?:/.test(photo.src)) return undefined;
+  return photo;
 }
 
 /**

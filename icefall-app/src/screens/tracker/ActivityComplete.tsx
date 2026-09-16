@@ -80,7 +80,12 @@ export default function ActivityComplete() {
 
   return (
     <div className="no-scrollbar h-full overflow-y-auto bg-obsidian pb-10">
-      <Header activity={activity} typeLabel={type.label} onBack={() => navigate("/activity")} />
+      <Header
+        activity={activity}
+        typeLabel={type.label}
+        onBack={() => navigate("/activity")}
+        onShare={() => navigate(`/activity/${activity.id}/share`)}
+      />
 
       <div className="px-5">
         <SummarySection activity={activity} />
@@ -158,10 +163,12 @@ function Header({
   activity,
   typeLabel,
   onBack,
+  onShare,
 }: {
   activity: Activity;
   typeLabel: string;
   onBack: () => void;
+  onShare: () => void;
 }) {
   /*
    * The backdrop is the mountain the activity was on, when the recording says
@@ -211,7 +218,12 @@ function Header({
           </button>
 
           <div className="flex items-center gap-2.5">
-            <IconButton label="Share activity" onClick={() => undefined}>
+            {/* Wired to the same destination as `ShareSection` further down
+                this screen — see the note there. This icon sat here doing
+                nothing (`onClick={() => undefined}`) while the button below
+                it worked, which is the definition of a dead control on a
+                screen whose whole second half is about sharing. */}
+            <IconButton label="Share activity" onClick={onShare}>
               <Share2 size={17} strokeWidth={1.6} />
             </IconButton>
             <IconButton label="More" onClick={() => undefined}>

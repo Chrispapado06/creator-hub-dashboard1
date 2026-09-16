@@ -1,372 +1,685 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Check, ChevronDown, Play } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  Calendar,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Lightbulb,
+  MoreVertical,
+  Mountain as MountainGlyph,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
+import { ProgressRing } from "@/components/ui/charts";
 import { isoDate } from "@/data/mock/clock";
-import { FOCUS_LABELS, fmtDistance, fmtElevation } from "@/lib/format";
+import { FOCUS_LABELS, fmtDateShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useApp } from "@/state/AppState";
-import { REFERENCE_PLAN_NOTE } from "@/services/peakTier";
-import { usePlanChangeHistory } from "@/tracking/adjustments";
-import { useTraining } from "@/tracking/training";
+import { usePrimaryGoal, useApp } from "@/state/AppState";
+import { DELOAD_SCALE, parseBlockLabel, useTraining } from "@/tracking/training";
 import type { TrainingDay, TrainingWeek } from "@/types";
-import { ACCENT, Chip, CoachCard, CoachHead, Eyebrow, ON_PRIMARY, PRIMARY, TINT } from "./shell";
+import { useCoachPlanSummary, weekRangeLabel, type PlanPhase } from "@/coach/planSummary";
 
 /**
- * COACH — PLAN, to the owner's design of 2026-09-04.
+ * COACH — PLAN, to `docs/design/coach-1to1-spec.md` Part B3/B4 and the
+ * owner's brief §1 and §4.2.
  *
- * A preparation summary, then this week as a vertical timeline whose rows
- * expand in place — the brief asks for inline detail and no deep navigation.
- * Everything drawn is the generated plan's own: the block name, the week
- * index against `totalWeeks`, each day's title, duration, distance and ascent,
- * and the completion state `useTraining` already resolves from the athlete's
- * ticks and their recorded activities.
+ * ONE ROUTE, ONE COMPONENT, TWO VIEWS. `/coach/plan` and
+ * `/coach/plan?view=progress` render from the SAME markup tree — the
+ * segmented control only swaps which section below it is mounted. This is
+ * not a style choice: the brief's §4.2 exists because the mockup's own
+ * Schedule and Progress screens disagreed with each other (different session
+ * names, a phase "Complete" while its own Schedule view was still inside it,
+ * 45% vs 13/243, 106+136≠242). Two screens computing their own arithmetic is
+ * how that happens; one screen reading `useCoachPlanSummary()` once cannot
+ * produce it, because there is only one place the numbers are computed.
  *
- * "33%" in the drawing is `preparation.percent`, which `computePreparation`
- * derives from prescribed sessions completed. It is labelled as that, because
- * a bare percentage beside a mountain reads as readiness, and readiness is a
- * different number with its own screen.
+ * EVERY NUMBER ON THIS PAGE COMES FROM `useCoachPlanSummary()` — the shared
+ * hook Hub and this screen both read, per the brief's §4.2 "one source of
+ * truth" rule. The only other data read here is `useTraining().completedByDate`
+ * (per-day completion, for the row status glyph and the mark-done action) and
+ * `useTraining().plan.weeks` (to browse a week other than the current one) —
+ * neither is a count, a week number, a percentage or a day total, so reading
+ * them here does not create a second arithmetic path.
  *
- * The phases view and the month calendar the old Plan screen drew are one tap
- * away at `/coach/plan/calendar`, not gone: other weeks are read there, and
- * this page keeps to the week the athlete is in.
+ * THE DELOAD COPY IS REAL, NOT COPIED FROM THE MOCKUP. "65%" is
+ * `DELOAD_SCALE` from `tracking/training.ts` — the actual multiplier the
+ * generator applies to a deload week — read back rather than retyped, so the
+ * sentence can never drift from what the plan actually did.
+ *
+ * TODAY'S ROW IS THE ONLY ROW THAT OPENS `/coach/session/:date` BY TAPPING
+ * IT. Part B3's own table draws a chevron on the today row only; every other
+ * row is informational, reached instead through its own "⋯" menu ("View
+ * session" / "Mark done"), which is also where a non-today row's mark-done
+ * toggle lives now that the old inline expand-in-place is gone.
  */
 
-function parseDate(iso: string): Date {
-  const [year, month, day] = iso.split("-").map(Number);
-  return new Date(year, month - 1, day);
+type DayStatus = "completed" | "today" | "upcoming";
+
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60 focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian";
+
+function dayAbbrev(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString("en-GB", { weekday: "short" });
 }
 
-function weekRangeLabel(week: TrainingWeek): string {
-  const start = parseDate(week.startDate);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  const sameMonth =
-    start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
-  const endLabel = end.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  if (sameMonth) return `${start.getDate()}–${endLabel}`;
-  return `${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${endLabel}`;
-}
-
-/** "Base 4 · deload" → "Base". The block's family, without its number or flag. */
-function blockPrefix(block: string): string {
-  return block.split("·")[0].trim().replace(/\s+\d+$/, "");
-}
-
-/* The same four sentences the old Plan's phases view carried. */
-const PHASE_PURPOSE: Record<string, string> = {
-  Base: "Aerobic base at a volume that repeats every week without costing you the next one.",
-  Build: "Volume and vertical rise together — the sessions start to resemble the objective.",
-  Peak: "The most specific weeks in the plan, and the highest load it prescribes.",
-  Taper: "Volume comes down so the work already behind you can surface.",
-};
-
-function dayMeta(day: TrainingDay): string {
-  const parts: string[] = [FOCUS_LABELS[day.focus] ?? day.focus];
+function sessionMeta(day: TrainingDay): string {
+  if (day.focus === "rest") return day.detail ?? "Rest and recovery.";
+  const parts: string[] = [];
   if (day.durationMin) parts.push(`${day.durationMin} min`);
-  if (day.distanceKm) parts.push(`${fmtDistance(day.distanceKm)} km`);
-  if (day.elevationM) parts.push(`${fmtElevation(day.elevationM)} m`);
+  parts.push(FOCUS_LABELS[day.focus] ?? day.focus);
   return parts.join(" · ");
 }
 
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-type DayState = "rest" | "completed" | "today" | "upcoming" | "unmarked";
-
 export default function Plan() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view: "schedule" | "progress" =
+    searchParams.get("view") === "progress" ? "progress" : "schedule";
+
+  const summary = useCoachPlanSummary();
   const training = useTraining();
-  /* The plan `training` hands back is the generator's baseline with the stored
-     changes already applied. This is the same set, read for the count on the
-     link below — a history nobody can find is the same as no history at all. */
-  const { entries } = usePlanChangeHistory(training.goal?.id);
-  const changeCount = entries.filter((e) => !e.undoneAt).length;
   const { toggleSession } = useApp();
-  const todayKey = isoDate(new Date());
+  const goal = usePrimaryGoal();
 
-  const plan = training.plan;
-  const week = training.currentWeek;
+  const [weekIndex, setWeekIndex] = useState<number | null>(null);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [rowMenuFor, setRowMenuFor] = useState<string | null>(null);
 
-  // The row that opens by default: today, else the first day still ahead.
-  const [open, setOpen] = useState<string | null>(() => {
-    if (!week) return null;
+  // A menu left open across a week flip or a view switch is a menu pointing
+  // at a row that is no longer there.
+  useEffect(() => {
+    setRowMenuFor(null);
+  }, [weekIndex, view]);
+
+  function setView(v: "schedule" | "progress") {
+    const next = new URLSearchParams(searchParams);
+    if (v === "progress") next.set("view", "progress");
+    else next.delete("view");
+    setSearchParams(next, { replace: true });
+  }
+
+  if (!summary) {
     return (
-      week.days.find((d) => d.date === todayKey)?.date ??
-      week.days.find((d) => d.date > todayKey)?.date ??
-      null
+      <Screen padded={false}>
+        <Stagger className="px-5 pb-10 pt-6">
+          <Rise>
+            <PlanTopBar
+              menuOpen={headerMenuOpen}
+              onMenu={() => setHeaderMenuOpen((v) => !v)}
+              onCloseMenu={() => setHeaderMenuOpen(false)}
+            />
+          </Rise>
+          <Rise className="mt-6">
+            <div className="rounded-card border border-hairline bg-graphite p-5">
+              <p className="section-label">Plan</p>
+              <h2 className="display mt-2 text-[28px] leading-tight text-snow">No plan yet</h2>
+              <p className="mt-3 text-[14px] leading-relaxed text-mist">
+                ICEFALL builds a week-by-week plan from an objective and its date. Name one and this
+                page fills in.
+              </p>
+              <Link
+                to="/goals"
+                className={cn(
+                  "mt-5 flex h-[52px] items-center justify-center rounded-full bg-azure text-[16px] font-semibold text-obsidian transition-colors hover:bg-azure-bright",
+                  FOCUS_RING,
+                )}
+              >
+                Set an objective
+              </Link>
+            </div>
+          </Rise>
+        </Stagger>
+      </Screen>
     );
-  });
+  }
 
-  const prefix = week ? blockPrefix(week.block) : null;
-
-  const stateOf = (day: TrainingDay): DayState => {
-    if (day.focus === "rest") return "rest";
-    if (training.completedByDate.get(day.date) === true) return "completed";
-    if (day.date === todayKey) return "today";
-    if (day.date > todayKey) return "upcoming";
-    return "unmarked";
-  };
-
-  const prescribed = useMemo(
-    () => (week ? week.days.filter((d) => d.focus !== "rest").length : 0),
-    [week],
-  );
+  const idx = weekIndex ?? summary.currentWeek.index;
+  const viewedWeek: TrainingWeek =
+    summary.plan.weeks.find((w) => w.index === idx) ?? summary.currentWeek;
+  const viewedIsDeload = parseBlockLabel(viewedWeek.block)?.deload ?? false;
+  // The same source `useTraining()` itself derives "today" from — not
+  // `training.today?.date`, which is `undefined` whenever today's calendar
+  // date falls outside the plan's own span, and would then silently disable
+  // the future-day guard on the mark-done action below.
+  const todayKey = isoDate(new Date());
 
   return (
     <Screen padded={false}>
       <Stagger className="px-5 pb-10 pt-6">
         <Rise>
-          <CoachHead title="Plan" objective="line" />
+          <PlanTopBar
+            menuOpen={headerMenuOpen}
+            onMenu={() => setHeaderMenuOpen((v) => !v)}
+            onCloseMenu={() => setHeaderMenuOpen(false)}
+          />
         </Rise>
 
-        {!plan || !week ? (
-          <Rise className="mt-5">
-            <CoachCard>
-              <Eyebrow>Preparation</Eyebrow>
-              <h2 className="display mt-1.5 text-[32px] leading-none text-snow">No plan yet</h2>
-              <p className="mt-3 text-[14px] leading-relaxed text-mist">
-                ICEFALL builds a week-by-week plan from an objective and its date. Name one and
-                this page fills in.
-              </p>
-              <Link
-                to="/goals"
-                className="mt-5 flex h-[52px] items-center justify-center rounded-full text-[16px] font-semibold"
-                style={{ backgroundColor: PRIMARY, color: ON_PRIMARY }}
-              >
-                Set an objective
-              </Link>
-            </CoachCard>
-          </Rise>
-        ) : (
-          <>
-            {/* ---- Preparation summary ------------------------------------ */}
-            <Rise className="mt-5">
-              <CoachCard>
-                <div className="flex items-center justify-between gap-3">
-                  <Eyebrow>{prefix} phase</Eyebrow>
-                  <span className="tnum text-[13px] text-mist">
-                    Week {week.index} of {plan.totalWeeks}
-                  </span>
-                </div>
-                <h2 className="display mt-2 text-[32px] leading-[1.05] text-snow">
-                  Week {week.index} of your preparation
-                </h2>
-                <p className="mt-2.5 text-[14px] leading-relaxed text-mist">
-                  {PHASE_PURPOSE[prefix ?? ""] ?? week.block}
-                </p>
+        {/* THE SLIM, NON-EDITABLE CONTEXT LINE — brief §4.2 item 3. The
+            objective chip that can change the goal lives on the hub alone;
+            everywhere else, including here, gets this line only. */}
+        <Rise className="mt-4">
+          <p className="truncate text-[13px] text-azure-bright">
+            {goal?.name ?? "No objective"} · Week {summary.currentWeek.index} ·{" "}
+            {summary.currentPhaseLabel}
+          </p>
+        </Rise>
 
-                {/* The plan's own label. It was on the Training screen and the
-                    older CoachPlan, and this — the routed /coach/plan — had none. */}
-                {training.goal && !training.goal.mountainId && (
-                  <p className="mt-2.5 text-[12px] leading-relaxed text-mist-dim">
-                    {REFERENCE_PLAN_NOTE}
+        <Rise className="mt-5">
+          <div
+            role="tablist"
+            aria-label="Plan view"
+            className="flex gap-1 rounded-full bg-slate p-1"
+          >
+            <button
+              type="button"
+              role="tab"
+              id="plan-tab-schedule"
+              aria-selected={view === "schedule"}
+              aria-controls="plan-panel-schedule"
+              onClick={() => setView("schedule")}
+              className={cn(
+                "h-11 flex-1 rounded-full text-[13.5px] font-medium transition-colors",
+                view === "schedule" ? "bg-azure text-obsidian" : "text-mist hover:text-snow",
+                FOCUS_RING,
+              )}
+            >
+              Schedule
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="plan-tab-progress"
+              aria-selected={view === "progress"}
+              aria-controls="plan-panel-progress"
+              onClick={() => setView("progress")}
+              className={cn(
+                "h-11 flex-1 rounded-full text-[13.5px] font-medium transition-colors",
+                view === "progress" ? "bg-azure text-obsidian" : "text-mist hover:text-snow",
+                FOCUS_RING,
+              )}
+            >
+              Progress
+            </button>
+          </div>
+        </Rise>
+
+        {view === "schedule" ? (
+          <div id="plan-panel-schedule" role="tabpanel" aria-labelledby="plan-tab-schedule">
+            <Rise className="mt-6">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setWeekIndex(Math.max(1, idx - 1))}
+                  disabled={idx <= 1}
+                  aria-label="Previous week"
+                  className={cn(
+                    "grid h-11 w-11 shrink-0 place-items-center rounded-full text-mist transition-colors hover:bg-white/[0.05] hover:text-snow disabled:opacity-30",
+                    FOCUS_RING,
+                  )}
+                >
+                  <ChevronLeft size={18} strokeWidth={1.6} aria-hidden="true" />
+                </button>
+                <div className="text-center">
+                  <p className="text-[15px] font-medium text-snow">Week {viewedWeek.index}</p>
+                  <p className="tnum mt-0.5 text-[13px] text-mist">
+                    {weekRangeLabel(viewedWeek.startDate)}
                   </p>
-                )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWeekIndex(Math.min(summary.totalWeeks, idx + 1))}
+                  disabled={idx >= summary.totalWeeks}
+                  aria-label="Next week"
+                  className={cn(
+                    "grid h-11 w-11 shrink-0 place-items-center rounded-full text-mist transition-colors hover:bg-white/[0.05] hover:text-snow disabled:opacity-30",
+                    FOCUS_RING,
+                  )}
+                >
+                  <ChevronRight size={18} strokeWidth={1.6} aria-hidden="true" />
+                </button>
+              </div>
+            </Rise>
 
-                {training.preparation && (
-                  <div className="mt-4">
-                    <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: TINT.blue }}>
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.max(0, Math.min(100, training.preparation.percent))}%`,
-                          backgroundColor: ACCENT.blue,
-                        }}
-                      />
-                    </div>
-                    {/* The CONSISTENCY part, not the composite: the composite
-                        also holds time-in-build (and, on a surveyed mountain,
-                        capability), so printing it under "of prescribed
-                        sessions completed" was a false label — 36% shown where
-                        2 of 4 sessions was the fact. */}
-                    <p className="tnum mt-2 text-[12px] text-mist">
-                      {training.preparation.parts.find((p) => p.label === "Consistency")?.percent ??
-                        training.preparation.percent}
-                      % of prescribed sessions completed — not a readiness figure.
+            <Rise className="mt-4">
+              <div className="overflow-hidden rounded-card border border-hairline bg-graphite">
+                {viewedWeek.days.map((day) => {
+                  const completed = training.completedByDate.get(day.date) ?? day.completed;
+                  const isToday = day.date === todayKey;
+                  const isFuture = day.date > todayKey;
+                  const status: DayStatus = completed
+                    ? "completed"
+                    : isToday
+                      ? "today"
+                      : "upcoming";
+                  return (
+                    <DayRow
+                      key={day.date}
+                      day={day}
+                      status={status}
+                      completed={completed}
+                      isFuture={isFuture}
+                      menuOpen={rowMenuFor === day.date}
+                      onOpenMenu={() =>
+                        setRowMenuFor((cur) => (cur === day.date ? null : day.date))
+                      }
+                      onCloseMenu={() => setRowMenuFor(null)}
+                      onToggle={() => toggleSession(viewedWeek.index, day.date, day.completed)}
+                    />
+                  );
+                })}
+              </div>
+            </Rise>
+
+            {viewedIsDeload && (
+              <Rise className="mt-4">
+                <div className="flex items-start gap-3 rounded-card border border-alert/25 bg-alert/10 p-4">
+                  <Lightbulb
+                    size={18}
+                    strokeWidth={1.7}
+                    className="mt-0.5 shrink-0 text-alert"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-semibold text-snow">Deload week</p>
+                    <p className="mt-1 text-[13px] leading-relaxed text-mist">
+                      {Math.round(DELOAD_SCALE * 100)}% of your usual block load so earlier weeks
+                      are absorbed.
                     </p>
                   </div>
-                )}
-              </CoachCard>
-            </Rise>
-
-            {/* ---- This week -------------------------------------------- */}
-            <Rise className="mt-4">
-              <CoachCard className="p-0">
-                <div className="flex items-baseline justify-between gap-3 px-5 pt-5">
-                  <h2 className="display text-[30px] leading-none text-snow">This week</h2>
-                  <span className="tnum text-[13px] text-mist">{weekRangeLabel(week)}</span>
                 </div>
-                <p className="tnum px-5 pt-1.5 text-[13px] text-mist">
-                  {prescribed} {prescribed === 1 ? "session" : "sessions"} prescribed
+              </Rise>
+            )}
+          </div>
+        ) : (
+          <div id="plan-panel-progress" role="tabpanel" aria-labelledby="plan-tab-progress">
+            <Rise className="mt-6">
+              <div className="rounded-card border border-hairline bg-graphite p-5">
+                <div className="flex items-center gap-5">
+                  <ProgressRing value={summary.sessions.percentOfPrescribed} size={92} stroke={7}>
+                    <span className="tnum text-[22px] font-semibold text-snow">
+                      {summary.sessions.percentOfPrescribed}%
+                    </span>
+                  </ProgressRing>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[16px] font-semibold text-snow">
+                      Week {summary.currentWeek.index} of {summary.totalWeeks}
+                    </p>
+                    <p className="tnum mt-2 text-[13px] text-mist">
+                      {summary.daysCompleted} days completed
+                    </p>
+                    <p className="tnum text-[13px] text-mist">
+                      {summary.daysRemaining} days remaining
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-4 border-t border-hairline pt-3 text-[12px] leading-relaxed text-mist-dim">
+                  Of prescribed sessions completed to date — not a readiness figure.
                 </p>
-
-                <ol className="mt-3 border-t border-hairline">
-                  {week.days.map((day, i) => {
-                    const state = stateOf(day);
-                    const expanded = open === day.date;
-                    const isFuture = day.date > todayKey;
-                    const completed = state === "completed";
-                    return (
-                      <li key={day.date} className="border-b border-hairline last:border-b-0">
-                        <button
-                          type="button"
-                          onClick={() => setOpen(expanded ? null : day.date)}
-                          aria-expanded={expanded}
-                          className="flex w-full items-center gap-3.5 px-5 py-3.5 text-left"
-                        >
-                          <span className="w-9 shrink-0">
-                            <span
-                              className={cn(
-                                "block text-[11px] font-medium uppercase tracking-[0.12em]",
-                                state === "today" ? "text-azure" : "text-mist",
-                              )}
-                            >
-                              {DAY_NAMES[i] ?? ""}
-                            </span>
-                            <span className="tnum block text-[15px] text-snow">{parseDate(day.date).getDate()}</span>
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span
-                              className={cn(
-                                "block truncate text-[15px]",
-                                state === "rest" ? "text-mist" : "font-medium text-snow",
-                              )}
-                            >
-                              {day.title}
-                            </span>
-                            <span className="tnum block truncate text-[12px] text-mist">{dayMeta(day)}</span>
-                          </span>
-                          <StateChip state={state} />
-                          <ChevronDown
-                            size={16}
-                            strokeWidth={1.7}
-                            aria-hidden="true"
-                            className={cn("shrink-0 text-mist transition-transform", expanded && "rotate-180")}
-                          />
-                        </button>
-
-                        {expanded && (
-                          <div className="px-5 pb-5">
-                            <div className="rounded-[18px] p-4" style={{ backgroundColor: TINT.blue }}>
-                              <h3 className="display text-[26px] leading-[1.05] text-snow">{day.title}</h3>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <Chip tone="blue">{FOCUS_LABELS[day.focus] ?? day.focus}</Chip>
-                                {day.durationMin ? <Chip>{day.durationMin} minutes</Chip> : null}
-                                <Chip>{week.block}</Chip>
-                              </div>
-                              <p className="mt-3 text-[14px] leading-relaxed text-mist">
-                                {day.detail ??
-                                  (state === "rest"
-                                    ? "A rest day. Nothing is prescribed, and nothing recorded today counts against the plan."
-                                    : "The plan carries no notes for this session.")}
-                              </p>
-
-                              {/* WHY THIS DAY IS NOT WHAT THE PLAN FIRST ASKED
-                                  FOR. A session that quietly differs from the
-                                  block it sits in is a plan changing by itself;
-                                  the change, the reason and whose reason it is
-                                  belong on the day, not only in the history.
-                                  Flat lines, no container — the tint behind
-                                  this detail is the card, and a second box
-                                  inside it is the thing the owner has objected
-                                  to four times. */}
-                              {day.adjusted?.map((a) => (
-                                <p
-                                  key={a.id}
-                                  className="mt-2 text-[13px] leading-relaxed text-mist"
-                                >
-                                  {a.summary}
-                                  {a.why
-                                    ? ` — “${a.why}”, ${a.by === "coach" ? "your coach" : "you"}`
-                                    : ""}
-                                </p>
-                              ))}
-
-                              <div className="mt-4 flex items-center gap-3">
-                                <Link
-                                  to={`/coach/session/${day.date}`}
-                                  className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full text-[15px] font-semibold"
-                                  style={{ backgroundColor: PRIMARY, color: ON_PRIMARY }}
-                                >
-                                  <Play size={14} strokeWidth={2} fill="currentColor" aria-hidden="true" />
-                                  {state === "rest" ? "Open the day" : "Start session"}
-                                </Link>
-                                {state !== "rest" && (
-                                  <button
-                                    type="button"
-                                    disabled={isFuture}
-                                    onClick={() => toggleSession(week.index, day.date, day.completed)}
-                                    aria-pressed={completed}
-                                    title={isFuture ? "Sessions can be marked once the day arrives." : undefined}
-                                    className={cn(
-                                      "inline-flex h-11 items-center gap-2 rounded-full border px-4 text-[14px] font-medium",
-                                      completed
-                                        ? "border-transparent text-snow"
-                                        : "border-hairline-strong text-snow",
-                                      isFuture && "opacity-40",
-                                    )}
-                                    style={completed ? { backgroundColor: TINT.green, color: ACCENT.green } : undefined}
-                                  >
-                                    <Check size={14} strokeWidth={2.2} aria-hidden="true" />
-                                    {completed ? "Done" : "Mark done"}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-
-                <div className="flex items-center justify-between gap-4 px-5 py-4">
-                  <Link to="/coach/plan/calendar" className="text-[15px] text-azure">
-                    Full calendar and phases →
-                  </Link>
-                  {/* Azure, not gold: these are the athlete's own changes to
-                      their own plan, and gold is reserved for a paid placement. */}
-                  <Link to="/coach/plan/changes" className="shrink-0 text-[15px] text-azure">
-                    {changeCount > 0 ? `Changes · ${changeCount}` : "Changes"}
-                  </Link>
-                </div>
-
-                {/* THE WEEKLY REVIEW IS REACHABLE HERE FOR GOOD, not only while
-                    it is unread on the hub. A review somebody dismissed and
-                    then wanted to re-read is exactly the thing that must not
-                    become unreachable — the Explore redesign shipped that way
-                    once and came back as "new explore doesnt work". */}
-                <div className="flex items-center justify-between gap-4 border-t border-hairline px-5 py-4">
-                  <Link to="/coach/review" className="text-[15px] text-azure">
-                    Weekly review →
-                  </Link>
-                </div>
-              </CoachCard>
+              </div>
             </Rise>
-          </>
+
+            <Rise className="mt-4">
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile icon={Check} value={summary.sessions.completedToDate} label="Logged" />
+                <StatTile
+                  icon={Calendar}
+                  value={summary.sessions.remainingTotal}
+                  label="Remaining"
+                />
+                <StatTile icon={MountainGlyph} value={summary.totalWeeks} label="Weeks" />
+              </div>
+            </Rise>
+
+            <Rise className="mt-4">
+              <div className="rounded-card border border-hairline bg-graphite p-5">
+                <p className="text-[15px] font-semibold text-snow">Milestones</p>
+                {summary.phases.length > 0 ? (
+                  <ol className="mt-1 divide-y divide-hairline">
+                    {summary.phases.map((phase) => (
+                      <MilestoneRow key={`${phase.kind}-${phase.weekStart}`} phase={phase} />
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-3 text-[13px] leading-relaxed text-mist">
+                    The plan has no phases to show yet.
+                  </p>
+                )}
+              </div>
+            </Rise>
+          </div>
         )}
       </Stagger>
     </Screen>
   );
 }
 
-function StateChip({ state }: { state: DayState }) {
-  switch (state) {
-    case "completed":
-      return <Chip tone="green">Completed</Chip>;
-    case "today":
-      return (
-        <Chip tone="blue" filled>
-          Today
-        </Chip>
-      );
-    case "upcoming":
-      return <Chip>Upcoming</Chip>;
-    case "rest":
-      return <Chip className="text-mist">Rest</Chip>;
-    default:
-      // A past session with no tick and no recorded activity. Not "missed":
-      // ICEFALL does not know what happened, only that nothing was marked.
-      return <Chip className="text-mist">Not marked</Chip>;
+/* -------------------------------------------------------------------------- */
+/* Top bar — "‹ Coach" / "Plan" / "⋮", the shape every non-hub Coach page uses */
+/* -------------------------------------------------------------------------- */
+
+function PlanTopBar({
+  menuOpen,
+  onMenu,
+  onCloseMenu,
+}: {
+  menuOpen: boolean;
+  onMenu: () => void;
+  onCloseMenu: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+      <Link
+        to="/coach"
+        className={cn(
+          "-ml-2 inline-flex items-center gap-1 rounded-full py-2 pl-2 pr-3 text-mist transition-colors hover:text-snow",
+          FOCUS_RING,
+        )}
+      >
+        <ChevronLeft size={20} strokeWidth={1.6} aria-hidden="true" />
+        <span className="text-[15px]">Coach</span>
+      </Link>
+      <h1 className="display justify-self-center text-[20px] text-snow">Plan</h1>
+      <div className="relative justify-self-end">
+        <button
+          type="button"
+          aria-label="Plan options"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={onMenu}
+          className={cn(
+            "grid h-11 w-11 place-items-center rounded-full text-mist transition-colors hover:bg-white/[0.05] hover:text-snow",
+            FOCUS_RING,
+          )}
+        >
+          <MoreVertical size={19} strokeWidth={1.7} aria-hidden="true" />
+        </button>
+        {menuOpen && (
+          <>
+            {/* Click-outside catcher. A `fixed` full-screen button rather than
+                a document listener — the same trick the app's other overflow
+                menu (`PostCard`'s "⋯") uses, and it closes on Escape for free
+                because the menu items are plain focusable elements. */}
+            <button
+              type="button"
+              aria-hidden="true"
+              tabIndex={-1}
+              onClick={onCloseMenu}
+              className="fixed inset-0 z-10 cursor-default"
+            />
+            <div
+              role="menu"
+              aria-label="Plan options"
+              className="absolute right-0 top-12 z-20 w-56 overflow-hidden rounded-tile border border-hairline-strong bg-slate shadow-lg"
+            >
+              <Link
+                role="menuitem"
+                to="/coach/plan/calendar"
+                onClick={onCloseMenu}
+                className="block px-4 py-3 text-[13.5px] text-snow transition-colors hover:bg-white/[0.04]"
+              >
+                Full calendar &amp; phases
+              </Link>
+              <Link
+                role="menuitem"
+                to="/coach/plan/changes"
+                onClick={onCloseMenu}
+                className="block border-t border-hairline px-4 py-3 text-[13.5px] text-snow transition-colors hover:bg-white/[0.04]"
+              >
+                Plan changes
+              </Link>
+              <Link
+                role="menuitem"
+                to="/coach/review"
+                onClick={onCloseMenu}
+                className="block border-t border-hairline px-4 py-3 text-[13.5px] text-snow transition-colors hover:bg-white/[0.04]"
+              >
+                Weekly review
+              </Link>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Schedule — one day row                                                     */
+/* -------------------------------------------------------------------------- */
+
+function StatusGlyph({ status, small }: { status: DayStatus; small?: boolean }) {
+  const size = small ? "h-[18px] w-[18px]" : "h-6 w-6";
+  if (status === "completed") {
+    return (
+      <span
+        aria-label="Completed"
+        className={cn(
+          "grid shrink-0 place-items-center rounded-full border border-summit bg-summit text-obsidian",
+          size,
+        )}
+      >
+        <Check size={small ? 10 : 13} strokeWidth={3} aria-hidden="true" />
+      </span>
+    );
   }
+  if (status === "today") {
+    return (
+      <span
+        aria-label="Today"
+        className={cn("grid shrink-0 place-items-center rounded-full border-2 border-azure", size)}
+      >
+        <span className={cn("rounded-full bg-azure", small ? "h-1.5 w-1.5" : "h-2.5 w-2.5")} />
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-label="Not yet marked"
+      className={cn("shrink-0 rounded-full border border-hairline-strong", size)}
+    />
+  );
+}
+
+function DayRow({
+  day,
+  status,
+  completed,
+  isFuture,
+  menuOpen,
+  onOpenMenu,
+  onCloseMenu,
+  onToggle,
+}: {
+  day: TrainingDay;
+  status: DayStatus;
+  completed: boolean;
+  isFuture: boolean;
+  menuOpen: boolean;
+  onOpenMenu: () => void;
+  onCloseMenu: () => void;
+  onToggle: () => void;
+}) {
+  const isToday = status === "today";
+  const content = (
+    <>
+      <span className="w-10 shrink-0">
+        <span
+          className={cn(
+            "block text-[11px] font-medium uppercase tracking-[0.1em]",
+            isToday ? "text-azure" : "text-mist",
+          )}
+        >
+          {dayAbbrev(day.date)}
+        </span>
+        <span className="tnum block text-[14px] text-snow">{fmtDateShort(day.date)}</span>
+      </span>
+      <span className="min-w-0 flex-1">
+        {/* No `truncate` here on purpose: a real session's name (e.g.
+            "Strength — Lower Body" on the highlighted today row, which also
+            carries a status dot AND a chevron) was clipping mid-word at
+            narrow widths. Wrapping to two lines shows the real name in full
+            instead of hiding part of it. */}
+        <span
+          className={cn(
+            "block text-[15px] leading-snug",
+            day.focus === "rest" ? "text-mist" : "font-medium text-snow",
+          )}
+        >
+          {day.title}
+        </span>
+        <span className="tnum block truncate text-[12px] text-mist">{sessionMeta(day)}</span>
+      </span>
+      <StatusGlyph status={status} />
+    </>
+  );
+
+  return (
+    <div
+      className={cn(
+        "relative flex items-center gap-3.5 border-b border-hairline px-4 py-3.5 last:border-b-0",
+        isToday && "bg-azure/12",
+      )}
+    >
+      {isToday ? (
+        <Link
+          to={`/coach/session/${day.date}`}
+          className={cn("flex min-w-0 flex-1 items-center gap-3.5 rounded-[10px]", FOCUS_RING)}
+        >
+          {content}
+          <ChevronRight
+            size={16}
+            strokeWidth={1.8}
+            className="shrink-0 text-azure"
+            aria-hidden="true"
+          />
+        </Link>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-3.5">{content}</div>
+      )}
+
+      <div className="relative shrink-0">
+        <button
+          type="button"
+          aria-label={`Options for ${day.title}, ${dayAbbrev(day.date)} ${fmtDateShort(day.date)}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={onOpenMenu}
+          className={cn(
+            "grid h-11 w-11 place-items-center rounded-full text-mist transition-colors hover:bg-white/[0.05] hover:text-snow",
+            FOCUS_RING,
+          )}
+        >
+          <MoreVertical size={17} strokeWidth={1.7} aria-hidden="true" />
+        </button>
+        {menuOpen && (
+          <>
+            <button
+              type="button"
+              aria-hidden="true"
+              tabIndex={-1}
+              onClick={onCloseMenu}
+              className="fixed inset-0 z-10 cursor-default"
+            />
+            <div
+              role="menu"
+              aria-label={`Options for ${day.title}`}
+              className="absolute right-0 top-12 z-20 w-52 overflow-hidden rounded-tile border border-hairline-strong bg-slate shadow-lg"
+            >
+              {!isToday && (
+                <Link
+                  role="menuitem"
+                  to={`/coach/session/${day.date}`}
+                  onClick={onCloseMenu}
+                  className="block px-4 py-3 text-[13.5px] text-snow transition-colors hover:bg-white/[0.04]"
+                >
+                  View session
+                </Link>
+              )}
+              <button
+                role="menuitem"
+                type="button"
+                disabled={isFuture}
+                onClick={() => {
+                  onToggle();
+                  onCloseMenu();
+                }}
+                className={cn(
+                  "block w-full px-4 py-3 text-left text-[13.5px] text-snow transition-colors hover:bg-white/[0.04] disabled:opacity-40",
+                  !isToday && "border-t border-hairline",
+                )}
+              >
+                {completed
+                  ? "Mark not done"
+                  : day.focus === "rest"
+                    ? "Mark rest day as taken"
+                    : "Mark done"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Progress                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function StatTile({
+  icon: Icon,
+  value,
+  label,
+}: {
+  icon: LucideIcon;
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className="rounded-card border border-hairline bg-graphite p-4 text-center">
+      <Icon size={16} strokeWidth={1.7} className="mx-auto text-azure" aria-hidden="true" />
+      <p className="tnum mt-2 text-[22px] font-semibold text-snow">{value}</p>
+      <p className="mt-0.5 text-[11px] uppercase tracking-[0.1em] text-mist">{label}</p>
+    </div>
+  );
+}
+
+function MilestoneRow({ phase }: { phase: PlanPhase }) {
+  const label =
+    phase.status === "complete"
+      ? "Complete"
+      : phase.status === "in-progress"
+        ? "In progress"
+        : "Not started";
+  const glyphStatus: DayStatus =
+    phase.status === "complete"
+      ? "completed"
+      : phase.status === "in-progress"
+        ? "today"
+        : "upcoming";
+  return (
+    <li className="flex items-center justify-between gap-3 py-3.5">
+      <div className="min-w-0">
+        <p className="text-[14.5px] font-medium text-snow">{phase.label} phase</p>
+        <p className="tnum text-[12.5px] text-mist">
+          Weeks {phase.weekStart}–{phase.weekEnd}
+        </p>
+      </div>
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-2 text-[12.5px]",
+          phase.status === "complete"
+            ? "text-summit"
+            : phase.status === "in-progress"
+              ? "text-azure"
+              : "text-mist",
+        )}
+      >
+        {label}
+        <StatusGlyph status={glyphStatus} small />
+      </span>
+    </li>
+  );
 }

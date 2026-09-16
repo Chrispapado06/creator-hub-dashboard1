@@ -49,6 +49,45 @@ export const PRIVACY_LABEL: Record<PostPrivacy, string> = {
   group: "Group only",
 };
 
+/**
+ * `OwnPost` HAS NO GROUP, AND IT IS NOT GETTING ONE. Read this before adding
+ * `groupId` here in the belief it is the small version of the feature.
+ *
+ * A GROUP POST IS A SERVER POST. It lives in `public.posts` with `group_id`
+ * set, it is read by `social/groupPosts.ts`, and the membership rule that makes
+ * it visible is `posts_select` in `20260912090000_post_group_id.sql`. This
+ * store is localStorage on one phone: nothing written here has ever reached
+ * another person and nothing here is queued to.
+ *
+ * So a `groupId` on this type would produce a group feed that shows the phone's
+ * owner their own posts, in a room shared with eleven others, with no
+ * explanation of why nobody else has ever said anything. That is not a smaller
+ * feature — it is a screen that tells somebody their group is silent when it is
+ * not, which is exactly the invented fact this file's other comments exist to
+ * prevent.
+ *
+ * WHICH LEAVES `PostPrivacy = "group"` AS A KNOWN GAP, recorded rather than
+ * quietly deleted. `PostComposer` offers "Group only" and stores it, and no
+ * group is ever named, so the value scopes a post to nothing. It is not removed
+ * from the union here because that is a screen's decision and this module does
+ * not own `PostComposer`; the sentence below is what a screen should draw
+ * beside that option until somebody rules on it. The two honest resolutions are
+ * to drop the option, or to make it write through `groupPosts.postToGroup`
+ * instead of into this store.
+ */
+export const DEVICE_POST_HAS_NO_GROUP =
+  "Posts written here stay on this phone — ICEFALL has nowhere to send one yet, so nobody else can see them and choosing a group does not file the post against one. Posting inside a group is a separate thing, on the group's own page.";
+
+/**
+ * SAID AT THE TOP OF ANY LIST DRAWN FROM THIS STORE. A screen showing these
+ * must not let them read as a feed: they are one device's posts, they are the
+ * only posts this store can ever hold, and an athlete looking at three of their
+ * own photographs deserves to know that is the whole of it rather than
+ * concluding their friends have gone quiet.
+ */
+export const DEVICE_POSTS_ARE_THIS_PHONE_ONLY =
+  "These are the posts written on this phone. They have not been sent anywhere and nobody else can see them, so this is not a feed of other people — it is your own record, kept here.";
+
 export interface MountainRef {
   name: string;
   /** `osm:…` or a curated id — the key to the mountain's own page. */
@@ -505,7 +544,7 @@ const POST_SESSION_TIMEOUT_MS = 3_000;
  * the byline, which is the schema's own accountability rule.
  */
 const POST_SELECT =
-  "id, author_id, author_kind, body, media_path, media_meta, created_at, expires_at";
+  "id, author_id, author_kind, body, media_path, media_meta, media_gallery, created_at, expires_at";
 
 /** `post-media`, private since 20260902160000 — an attachment is signed, never linked. */
 const POST_DETAIL_MEDIA_BUCKET = "post-media";
@@ -606,6 +645,82 @@ function mediaFrom(url: string, path: string, meta: Record<string, unknown> | nu
     // description at all.
     alt,
   };
+}
+
+/**
+ * `media_gallery` (20260916120000) as a list of RAW ELEMENTS — one per image,
+ * each shaped like `media_meta` plus its own `path`. Nothing is signed here;
+ * a caller batches every path across every element (and, for this module's
+ * one-post caller, that batch is of size 1-10) before turning any of this
+ * into a `PostMedia`.
+ *
+ * Genuinely defensive: `media_gallery` is an untyped `jsonb` column this
+ * client has never had checked against it, so every level — is it an array,
+ * is each element an object, is its `path` a non-empty string — is verified
+ * rather than assumed. A malformed element is dropped, not coerced; a
+ * malformed column (not an array at all) returns an empty list, which is what
+ * makes `gallery` end up `undefined` rather than a lie about what was read.
+ */
+function galleryElements(raw: unknown): { path: string; meta: Record<string, unknown> }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { path: string; meta: Record<string, unknown> }[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const meta = entry as Record<string, unknown>;
+    const path = typeof meta.path === "string" && meta.path.length > 0 ? meta.path : null;
+    if (!path) continue;
+    out.push({ path, meta });
+  }
+  return out;
+}
+
+/**
+ * Every image in a gallery, signed — or nothing at all where a path will not
+ * sign. ONE BATCH REQUEST, not `signOnePostMedia` called N times: the two
+ * requests inside `fetchServerPost` are already sequential-by-necessity (the
+ * author needs the post's `author_id` first); a gallery of up to ten images
+ * does not need to repeat that pattern one photograph at a time.
+ *
+ * Mirrors `signOnePostMedia`'s posture exactly: failure is not an error
+ * state. A gallery element that cannot be signed is dropped from the array
+ * rather than rendered as a broken frame; the post itself — and any image
+ * that DID sign — still shows.
+ */
+async function signGalleryMedia(
+  elements: { path: string; meta: Record<string, unknown> }[],
+): Promise<PostMedia[]> {
+  if (elements.length === 0 || !untypedPosts) return [];
+  try {
+    const signed = await withPostDeadline(
+      untypedPosts.storage
+        .from(POST_DETAIL_MEDIA_BUCKET)
+        .createSignedUrls(
+          elements.map((e) => e.path),
+          POST_DETAIL_MEDIA_TTL_SECONDS,
+        ),
+      POST_MEDIA_TIMEOUT_MS,
+    );
+    if (signed === POST_TIMED_OUT || signed.error || !Array.isArray(signed.data)) return [];
+    const urlByPath = new Map<string, string>();
+    for (const row of signed.data as unknown[]) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as { path?: unknown; signedUrl?: unknown; error?: unknown };
+      // Each entry carries its own error — one unsignable image does not fail
+      // the batch and must not be read as a URL for the others.
+      if (r.error || typeof r.path !== "string") continue;
+      if (typeof r.signedUrl === "string" && r.signedUrl.length > 0) {
+        urlByPath.set(r.path, r.signedUrl);
+      }
+    }
+    const out: PostMedia[] = [];
+    for (const { path, meta } of elements) {
+      const url = urlByPath.get(path);
+      if (url) out.push(mediaFrom(url, path, meta));
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -722,6 +837,15 @@ export async function fetchServerPost(id: string, signal?: AbortSignal): Promise
   const signedUrl = mediaPath ? await signOnePostMedia(mediaPath) : null;
   if (signal?.aborted) return { subject: null, state: "loading" };
 
+  // ADDITIVE: `media_gallery` alongside `media_path` above, never instead of
+  // it. A row with no gallery (every row before 20260916120000, and every
+  // single-image/single-video post since) reads `galleryElements` as `[]`,
+  // signs nothing, and `gallery` below ends up `undefined` — byte for byte
+  // what this function already returned before this column existed.
+  const galleryRaw = galleryElements(row.media_gallery);
+  const signedGallery = galleryRaw.length > 0 ? await signGalleryMedia(galleryRaw) : [];
+  if (signal?.aborted) return { subject: null, state: "loading" };
+
   const post: Post = {
     id: rowId,
     author: {
@@ -753,6 +877,10 @@ export async function fetchServerPost(id: string, signal?: AbortSignal): Promise
       mediaPath && signedUrl
         ? mediaFrom(signedUrl, mediaPath, (row.media_meta ?? null) as Record<string, unknown> | null)
         : undefined,
+    // Only set where the column was genuinely a non-empty array AND at least
+    // one element actually signed — never invented, and never a 1-item array
+    // manufactured to stand in for `media` when signing partially failed.
+    gallery: signedGallery.length > 0 ? signedGallery : undefined,
     // NO `likeCount`, `likedByMe` OR `commentCount`, and that is deliberate
     // rather than unfinished. `like_count` and `liked_by_me` exist as computed
     // fields (20260902100000) but NOTHING IN THIS APP WRITES A LIKE — so a real

@@ -4,7 +4,8 @@ import { MOUNTAINS } from "@/data/mock/mountains";
 import { TREKS, trekRegion } from "@/treks";
 import { trekHasPhoto, trekImage } from "@/treks/images";
 import type { Trek } from "@/treks/model";
-import { DEMO_GROUPS, SHOW_DEMO_GROUPS, type DemoGroup } from "@/social/demoGroups";
+import { EXAMPLE_GROUPS, EXAMPLE_LABEL, type ExampleGroup } from "@/groups/demo/exampleSource";
+import { phoneGroupsNotMoved } from "@/groups/local/phoneGroups";
 import {
   SHARED_GROUPS_NOT_LIVE,
   SHARED_GROUPS_UNREACHABLE,
@@ -42,11 +43,10 @@ import { useApp } from "@/state/AppState";
  * one small request.
  *
  * ── WHAT THIS MODULE REFUSES TO DRAW ────────────────────────────────────────
- * A trek image is included only when the photograph is OF THE ROUTE, and a
- * demo group carries neither its cover nor its invented member count. Both
- * rules are argued at their call sites below; both exist because a search row
- * is a one-line surface with no room for the qualifier that would make a
- * borrowed picture or a written-down number honest.
+ * A trek image is included only when the photograph is OF THE ROUTE, and an
+ * example group (demo builds only) carries no photograph and says "Example" on
+ * its row. Both rules exist because a search row is a one-line surface with no
+ * room for the qualifier that would make a borrowed picture honest.
  */
 
 /**
@@ -62,7 +62,7 @@ import { useApp } from "@/state/AppState";
 export type SearchHit = {
   /**
    * Unique across ALL sources, not just this one — prefixed `trek:`,
-   * `group:`, `demo-group:`, `my-group:`. The consuming screen merges hits from
+   * `group:`, `example-group:`, `my-group:`. The consuming screen merges hits from
    * several modules into lists it keys by id, and a trek and a group that
    * happened to share a slug would collide into one row with no error. Read
    * the entity's own id off `to`, never by stripping this.
@@ -76,7 +76,7 @@ export type SearchHit = {
   to: string;
   /** Omitted rather than filled with a placeholder. */
   imageUrl?: string;
-  /** An honesty note carried by the row itself, e.g. "Placeholder group". */
+  /** An honesty note carried by the row itself, e.g. "Example". */
   note?: string;
 };
 
@@ -226,59 +226,30 @@ export function useTrekSearch(q: string): SearchHit[] {
 /* -------------------------------------------------------------------------- */
 
 /**
- * THERE ARE THREE KINDS OF GROUP IN THIS APP AND THEY ARE NOT THE SAME THING.
+ * THREE KINDS OF GROUP REACH THIS SEARCH.
  *
- *   1. YOUR OWN GROUPS — local `Expedition` rows in `AppState`, the party you
- *      planned for a peak. Real, measured, on this device, and the only kind
- *      with a working detail screen.
+ *   1. GROUPS SAVED ON THIS PHONE — local `Expedition` rows in `AppState` that
+ *      have not been moved to the server (`groups/local/phoneGroups.ts`).
  *   2. SERVER GROUPS — `public.groups`, one mountain each, read through
- *      `@/network/interest`. Real, and readable only when signed in.
- *   3. DEMO GROUPS — invented, for reviewing the Groups layout. Marked on
- *      every row.
+ *      `@/network/interest`, readable only when signed in. The ones you are in
+ *      count as yours (structure plan §3.5).
+ *   3. EXAMPLE GROUPS — labelled examples, in demo builds only
+ *      (`groups/demo/exampleSource.ts`). Marked "Example" on every row.
  *
- * The brief named the last two. The first is included because leaving it out
- * makes the feature hollow: with no session and no demo data — the ordinary
- * production case — a search for a group the athlete created themselves five
- * minutes ago would return nothing, and the reason would be invisible.
- *
- * They are returned in that order, and the cap is applied after the merge, so
- * a placeholder can never push a real group off the list.
+ * Yours come first, then other server groups, then examples, and the cap is
+ * applied after the merge, so an example can never push a real group off the
+ * list. Every row opens its group at `/social/groups/:id`, which opens a phone
+ * group, a server group's uuid and an example id alike.
  */
-
-/**
- * WHY EVERY GROUP ROW BUT YOUR OWN OPENS THE LIST, NOT A GROUP.
- *
- * `/social/groups/:id` is `GroupWorkspace`, and it resolves its id against
- * `useApp().expeditions` — the LOCAL parties — then renders `NotOnThisDevice`
- * for anything it cannot find. So a server group's uuid or a demo group's
- * `g-mont-blanc` sent to that route is a dead end that looks like a bug. Until
- * a group detail screen exists that can open a server group, those rows land on
- * the Groups sub-tab of Social, where both lists are drawn with the disclosure
- * the Groups screen already carries.
- *
- * IT IS A QUERY, NOT A PATH: Social's sub-tab lives in the search string, so
- * the list is `/social?tab=groups`. `/explore/groups` still redirects here.
- */
-const GROUPS_LIST_ROUTE = "/social?tab=groups";
-
-/**
- * The marker on an invented group. Short on purpose.
- *
- * `GROUPS_DEMO_NOTICE` is a paragraph, and it is the right length above a list
- * where it can be read once. It is the wrong length on a row. So the row
- * carries the two words that stop a searcher mistaking this for a real party,
- * and the source-level note returned beside the hits carries the paragraph's
- * substance. Neither is optional: the row marker is what travels if the
- * consuming screen renders hits without their section note.
- */
-const DEMO_GROUP_NOTE = "Placeholder group";
 
 /** Mountains this app holds, by the slug `destinations` and `groups` use. */
 const PEAK_BY_ID = new Map(MOUNTAINS.map((m) => [m.id, m]));
 
+const groupRoute = (id: string) => `/social/groups/${encodeURIComponent(id)}`;
+
 /* ---- Your own groups ----------------------------------------------------- */
 
-function myGroupHit(group: Expedition): SearchHit {
+function phoneGroupHit(group: Expedition): SearchHit {
   // The peak's own photograph, resolved through the ONE name→slug mapping the
   // app has. A second copy of that rule here would drift and start putting the
   // wrong mountain beside somebody's plan.
@@ -294,7 +265,7 @@ function myGroupHit(group: Expedition): SearchHit {
     // dates you entered; `formatWindow` says "Dates not recorded" rather than
     // inventing one when they are missing.
     subtitle: line("Your group", formatWindow(group.window)),
-    to: `/social/groups/${encodeURIComponent(group.id)}`,
+    to: groupRoute(group.id),
     imageUrl: peak?.photo,
   };
 }
@@ -302,7 +273,8 @@ function myGroupHit(group: Expedition): SearchHit {
 /* ---- Server groups ------------------------------------------------------- */
 
 function serverGroupHit(group: MountainGroup): SearchHit {
-  const peak = PEAK_BY_ID.get(group.destinationId);
+  // Null where the group is about something that is not a place at all.
+  const peak = group.destinationId === null ? undefined : PEAK_BY_ID.get(group.destinationId);
 
   return {
     id: `group:${group.id}`,
@@ -314,43 +286,40 @@ function serverGroupHit(group: MountainGroup): SearchHit {
        not know — the exact substitution `interest.ts` made the field nullable
        to prevent. A row with no count states no count.
 
-       The mountain's NAME is shown only when this app holds that peak. The
-       slug is not de-hyphenated into a title: turning `ama-dablam` into a
-       display name is guessing at spelling and capitalisation the catalogue
-       has not given us. */
+       A NAME IS ONLY EVER ONE THAT CAME BACK — this app's record of the peak,
+       or the catalogue's own name where the list read it. The slug is not
+       de-hyphenated into a title: turning `ama-dablam` into a display name is
+       guessing at spelling and capitalisation nobody has given us. */
     subtitle: line(
-      peak?.name,
+      group.joinedByMe ? "Your group" : undefined,
+      // The peak where this app holds it, the catalogue's name for a place it
+      // does not, and otherwise the group's own subject. Never the slug.
+      peak?.name ??
+        group.destination?.name ??
+        (group.destinationId === null ? (group.topic ?? undefined) : undefined),
       group.memberCount === null
         ? undefined
         : `${group.memberCount} ${group.memberCount === 1 ? "member" : "members"}`,
     ),
-    to: GROUPS_LIST_ROUTE,
-    // By slug, never matched on the group's title — the same rule
-    // `GroupCoverCard` follows, so a group called "Everest, May" cannot pull
-    // Everest's photograph onto a group about a different peak.
+    to: groupRoute(group.id),
+    // By slug, never matched on the group's title, so a group called
+    // "Everest, May" cannot pull Everest's photograph onto a different peak.
     imageUrl: peak?.photo,
   };
 }
 
-/* ---- Demo groups --------------------------------------------------------- */
+/* ---- Example groups ------------------------------------------------------ */
 
-function demoGroupHit(group: DemoGroup): SearchHit {
+function exampleGroupHit({ group }: ExampleGroup): SearchHit {
   return {
-    id: `demo-group:${group.id}`,
+    id: `example-group:${group.id}`,
     kind: "group",
     title: group.name,
-    /* THE MOUNTAIN ONLY. `members` and `posts` are written numbers — the file
-       says so in its own header — and the Groups screen may print them because
-       `GROUPS_DEMO_NOTICE` sits directly above them. A search row has no such
-       paragraph over it, and "1,240 members" read in passing is a measurement
-       ICEFALL never made. It is not carried here at all. */
-    subtitle: group.mountain,
-    to: GROUPS_LIST_ROUTE,
-    /* NO COVER, for the same reason. The cover is a real photograph of a real
-       mountain, which is exactly what makes it dangerous on an invented group:
-       it dresses a party that does not exist as one that does. The Groups
-       screen can afford it under its disclaimer; a row cannot. */
-    note: DEMO_GROUP_NOTE,
+    subtitle: group.mountain?.name,
+    to: groupRoute(group.id),
+    /* No photograph: a real mountain's picture on a search row would dress an
+       example as a real party, and a row has no room to say otherwise. */
+    note: EXAMPLE_LABEL,
   };
 }
 
@@ -359,42 +328,31 @@ function demoGroupHit(group: DemoGroup): SearchHit {
 /**
  * The sentence beside the group results, or nothing.
  *
- * SILENCE LIES HERE MORE THAN ANYWHERE ELSE IN THIS MODULE. "No group called
- * that" and "ICEFALL could not read the group list" lead a climber to opposite
- * conclusions about whether to keep looking for a partner, and only the first
- * is something this app can know. Every state that is not "we asked and this
- * is the answer" says which one it is.
+ * "No group called that" and "ICEFALL could not read the group list" lead a
+ * climber to opposite conclusions about whether to keep looking for a partner,
+ * and only the first is something this app can know. Every state that is not
+ * "we asked and this is the answer" says which one it is.
  *
  * The two server failures reuse `interest.ts`'s own wording rather than a
- * paraphrase — one place says why the shared list is missing, so the Groups
- * screen and the search box cannot start disagreeing about what went wrong.
- *
- * EVERY SENTENCE IS ABOUT OTHER PEOPLE'S GROUPS, and says so. The first draft
- * of this function read "no real group could be searched" when there was no
- * session — which is false, because your own groups are on this device and are
- * searched on every keystroke regardless. A note that disclaims work the app
- * actually did is as misleading as one that claims work it did not.
+ * paraphrase, so the Groups screen and the search box cannot disagree about
+ * what went wrong. Groups saved on this phone are searched in every state, and
+ * no sentence says otherwise.
  */
-function groupSourceNote(state: SharedGroups, demoShown: boolean): string | undefined {
+function groupSourceNote(state: SharedGroups, examplesShown: boolean): string | undefined {
+  const examples = examplesShown ? " Rows marked Example are not real groups." : "";
   switch (state.status) {
     case "loading":
-      return "Other people's groups are still loading, so they may not be in these results yet. Your own are searched on this device and are already here.";
+      return "Other people's groups are still loading, so they may not be in these results yet.";
     case "no-backend":
-      return demoShown
-        ? "This build has no server, so no group anyone else made was searched — only your own, which live on this device. Rows marked placeholder are not real groups."
-        : "This build has no server, so no group anyone else made was searched — only your own, which live on this device. Nothing has been hidden from you; nothing was asked.";
+      return `This build has no server, so only groups saved on this phone were searched.${examples}`;
     case "signed-out":
-      return demoShown
-        ? "Other people's groups are only visible once you are signed in, so none were searched — only your own. Rows marked placeholder are not real groups."
-        : "Other people's groups are only visible once you are signed in, so none were searched — only your own, on this device. This is not an empty list; it is an unasked question.";
+      return `Sign in to search other people's groups; only groups saved on this phone were searched.${examples}`;
     case "not-provisioned":
       return SHARED_GROUPS_NOT_LIVE;
     case "unreachable":
       return SHARED_GROUPS_UNREACHABLE;
     case "ready":
-      return demoShown
-        ? "Rows marked placeholder were written by ICEFALL to review this layout. Those groups do not exist, and nobody has joined them."
-        : undefined;
+      return examplesShown ? examples.trim() : undefined;
   }
 }
 
@@ -414,38 +372,39 @@ export function useGroupSearch(q: string): { hits: SearchHit[]; note?: string } 
   return useMemo(() => {
     if (query.length < MIN_QUERY) return { hits: [] };
 
-    // Your own: the peak it is about, and anything you wrote about it.
-    const mine = expeditions
+    // Yours on this phone: the peak it is about, and anything you wrote about it.
+    const phone = phoneGroupsNotMoved(expeditions)
       .filter((e) => fold(`${e.peakName} ${e.description ?? ""}`).includes(query))
-      .map(myGroupHit);
+      .map(phoneGroupHit);
 
-    const server =
+    const serverMatches =
       state.status === "ready"
-        ? state.groups
-            .filter((g) => {
-              const peak = PEAK_BY_ID.get(g.destinationId);
-              /* The slug is matched with its hyphens opened out, so "mont
-                 blanc" finds a group about Mont Blanc that its founder called
-                 "June push". This is a match on data, not a display name —
-                 nothing de-hyphenated is ever shown. */
-              const slugWords = g.destinationId.replace(/-/g, " ");
-              return fold(`${g.name} ${peak?.name ?? ""} ${slugWords}`).includes(query);
-            })
-            .map(serverGroupHit)
+        ? state.groups.filter((g) => {
+            const peak = g.destinationId === null ? undefined : PEAK_BY_ID.get(g.destinationId);
+            /* The slug is matched with its hyphens opened out, so "mont
+               blanc" finds a group about Mont Blanc that its founder called
+               "June push". This is a match on data, not a display name —
+               nothing de-hyphenated is ever shown. A group about a subject
+               rather than a place is matched on that subject instead. */
+            const slugWords = (g.destinationId ?? "").replace(/-/g, " ");
+            return fold(`${g.name} ${peak?.name ?? ""} ${slugWords} ${g.topic ?? ""}`).includes(
+              query,
+            );
+          })
         : [];
+    // Server groups you are in are yours, and come before everyone else's.
+    const joined = serverMatches.filter((g) => g.joinedByMe).map(serverGroupHit);
+    const others = serverMatches.filter((g) => !g.joinedByMe).map(serverGroupHit);
 
-    const demo =
-      SHOW_DEMO_GROUPS
-        ? DEMO_GROUPS.filter((g) => fold(`${g.name} ${g.mountain}`).includes(query)).map(
-            demoGroupHit,
-          )
-        : [];
+    const examples = EXAMPLE_GROUPS.filter(({ group }) =>
+      fold(`${group.name} ${group.mountain?.name ?? ""}`).includes(query),
+    ).map(exampleGroupHit);
 
     return {
-      hits: [...mine, ...server, ...demo].slice(0, GROUP_LIMIT),
-      // Tied to what is actually on screen: "some of these are placeholders"
-      // is confusing above a list with no placeholder in it.
-      note: groupSourceNote(state, demo.length > 0),
+      hits: [...joined, ...phone, ...others, ...examples].slice(0, GROUP_LIMIT),
+      // Tied to what is actually on screen: "some of these are examples" is
+      // confusing above a list with no example in it.
+      note: groupSourceNote(state, examples.length > 0),
     };
   }, [query, state, expeditions]);
 }

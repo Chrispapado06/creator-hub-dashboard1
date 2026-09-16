@@ -5,6 +5,7 @@ import {
   type DetectedRecord,
 } from "./records";
 import { buildInsight } from "./insights";
+import { saveOffline, savedSentenceFor } from "@/device/savedHere";
 import { activeDaysThisWeek, loadActivities, loadMeta, saveActivity, saveMeta } from "./store";
 import { invalidateFeed } from "./feed";
 import type { RecordedActivity } from "./types";
@@ -23,7 +24,17 @@ export interface FinalizedActivity {
   notes: string[];
   records: DetectedRecord[];
   achievements: DetectedAchievement[];
+  /**
+   * Where this session went, in one line for the completion screen: "Kept on
+   * this phone. Not uploaded." today, because a recorded activity has no server
+   * table. The sync queue's kinds decide the wording, not this file.
+   */
+  storageNote: string;
 }
+
+/** The sync queue's name for a recorded session, and one row per session id. */
+export const ACTIVITY_SYNC_KIND = "activity";
+export const activityDedupeKey = (id: string) => `${ACTIVITY_SYNC_KIND}:${id}`;
 
 export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
   const history = loadActivities();
@@ -81,6 +92,18 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
 
   saveActivity(activity);
 
+  /* Offered to the sync queue, which refuses it by name: there is no activities
+     table, so the answer is "kept on this phone" and nothing is stored in the
+     queue. It is offered rather than skipped so that the day a table exists,
+     the kind moving out of KEPT_ON_PHONE_KINDS is the whole change — here, and
+     on every screen that shows the sentence below. The payload is a reference,
+     not the track: the session itself is already saved above. */
+  void saveOffline({
+    kind: ACTIVITY_SYNC_KIND,
+    payload: { id: activity.id, endedAt: activity.endedAt },
+    dedupeKey: activityDedupeKey(activity.id),
+  });
+
   if (!unverified) {
     saveMeta({
       earnedAchievements: [...meta.earnedAchievements, ...achievements.map((a) => a.id)],
@@ -105,5 +128,6 @@ export function finalizeActivity(raw: RecordedActivity): FinalizedActivity {
           : [],
     records,
     achievements,
+    storageNote: savedSentenceFor(ACTIVITY_SYNC_KIND),
   };
 }

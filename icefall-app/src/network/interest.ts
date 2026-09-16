@@ -83,10 +83,46 @@ export const SHARED_GROUPS_UNREACHABLE =
 /* Shapes                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The catalogue row a group is filed against, as little of it as this list needs.
+ *
+ * READ THROUGH AN OPTIONAL SELECT, so it is null on any server that will not
+ * serve the embed, and null is drawn as an absence rather than as "no place".
+ * A TREK IS NOT A MOUNTAIN: `kind` is carried so the screen can say which sort
+ * of place it is instead of calling a walk a peak.
+ */
+export interface GroupPlace {
+  name: string;
+  kind: "mountain" | "trek" | null;
+}
+
 export interface MountainGroup {
   id: string;
-  /** The mountain's slug — `mont-blanc`, `everest`. See `destinations`. */
-  destinationId: string;
+  /**
+   * The place's slug — `mont-blanc`, `everest`. See `destinations`.
+   *
+   * NULLABLE SINCE `group_type_and_trip.sql`: a group may be about a region, a
+   * community of people, or a peak the catalogue has no record of, and then it
+   * carries `topic` instead. Such a group is LISTED — dropping it would make a
+   * group that exists impossible to find, which is a worse lie than a card with
+   * no photograph.
+   */
+  destinationId: string | null;
+  /**
+   * The catalogue row itself — its name and which sort of place it is.
+   *
+   * NULL ALSO MEANS NOT READ, exactly like `topic`: a server that will not
+   * serve the embed leaves every one of these null and the list draws the
+   * places it cannot name as unnamed. Nothing is ever built from the slug.
+   */
+  destination: GroupPlace | null;
+  /**
+   * `groups.topic` — the group's subject in its own words, where it has no
+   * catalogue row. NULL ALSO MEANS NOT READ: on a server without that column
+   * the second select below is skipped and every group has one of these null.
+   * A label, never a place: nothing is linked or drawn from it.
+   */
+  topic: string | null;
   name: string;
   /** ISO date, or null where the party has not fixed one. Never guessed. */
   intendedOn: string | null;
@@ -150,30 +186,72 @@ export type InterestedPeople =
 /**
  * Which of the honest absences a PostgREST error is.
  *
- * `PGRST205` is "no such table in the schema cache", `42P01` is the same thing
- * from Postgres itself, and `42501` is a missing grant. All three mean the same
- * thing to a climber — the shared list is not open to this app yet — and none
- * of them mean an empty list.
+ * `PGRST205` is "no such table in the schema cache" and `42P01` is the same
+ * thing from Postgres itself: the shared list is not on this server yet, which
+ * is not an empty list.
+ *
+ * `42703` and `PGRST204` are A MISSING COLUMN, and they are here for the same
+ * reason `social/groupSpace.ts` has them: a column that arrives in a migration
+ * the owner has not applied is a fact about the deployment, not a refusal. This
+ * file went a whole slice without them and the optional select below could not
+ * retry, which is the one failure that matters — see `selectGroups`.
  *
  * A transport failure carries no code at all and its message mentions `fetch`,
- * which is the same test `@/enquiries/send` uses. One is worth retrying and the
- * other never is, so they are never reported with the same sentence.
+ * the same test `@/enquiries/send` and `social/groupSpace.ts` make. One is
+ * worth retrying and the other never is, so they never share a sentence.
  */
 function classify(error: PostgrestError | null): "not-provisioned" | "unreachable" | "refused" {
   if (!error) return "refused";
+  const code = error.code ?? "";
+  if (code === "PGRST205" || code === "42P01") return "not-provisioned";
+  if (code === "42703" || code === "PGRST204") return "not-provisioned";
   /* 42501 is NOT a deployment fact — it is a refusal. Measured 2026-09-02: a
      deployed table with no grant for this role answers 42501, a missing one
      answers PGRST205. Telling somebody whose session expired that the feature
      is not live yet is a false claim about the server. See backend/pgErrors.ts. */
-  if (error.code === "PGRST205" || error.code === "42P01") {
-    return "not-provisioned";
-  }
+  if (code === "42501") return "refused";
   if ((error.message ?? "").toLowerCase().includes("fetch")) return "unreachable";
   return "refused";
 }
 
-/** Everything the row selector asks for, in one place so reads cannot drift. */
-const GROUP_COLUMNS = "id, destination_id, name, intended_on, created_at, member_count, joined_by_me";
+/**
+ * The errors the OPTIONAL half of the select is allowed to fail with.
+ *
+ * Narrower than `classify` on purpose. A missing column (`42703`, `PGRST204`)
+ * or an embed this server will not resolve (`PGRST200`) means "ask for less";
+ * a missing table means ask again for nothing, so it is left to fail once.
+ */
+function absentOptional(error: PostgrestError): boolean {
+  const code = error.code ?? "";
+  return code === "42703" || code === "PGRST204" || code === "PGRST200";
+}
+
+/**
+ * Everything this list needs from a server that has had nothing applied to it.
+ *
+ * EXACTLY WHAT WAS ASKED FOR BEFORE ANY OF THE GROUPS WORK. It is the fallback,
+ * so it must stay a select today's server can answer.
+ */
+export const GROUP_COLUMNS =
+  "id, destination_id, name, intended_on, created_at, member_count, joined_by_me";
+
+/**
+ * The same, plus what a group says it is about.
+ *
+ * ASKED FOR FIRST AND RETRIED WITHOUT (structure plan D13). `topic` arrives in
+ * a migration that is written and not applied, and PostgREST fails the WHOLE
+ * select on a column that is not there — so a build that shipped first would
+ * otherwise report "shared mountains are not live" about a list that plainly
+ * is. The embed is asked for here too rather than in the base select for the
+ * same reason: this list must never go down over the nice half of a read.
+ */
+export const GROUP_COLUMNS_WITH_SUBJECT = `${GROUP_COLUMNS}, topic, destinations(name, kind)`;
+
+/** An embedded row, which PostgREST may hand back as an object or an array. */
+function embedded(raw: unknown): Record<string, unknown> | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
 
 /**
  * A PostgREST row, as loosely as it can honestly be described.
@@ -187,11 +265,26 @@ function toGroup(row: Record<string, unknown>): MountainGroup | null {
   const id = typeof row.id === "string" ? row.id : null;
   const destinationId = typeof row.destination_id === "string" ? row.destination_id : null;
   const name = typeof row.name === "string" ? row.name : null;
-  if (!id || !destinationId || !name) return null;
+  // A group with no destination is a group about something else, not a bad row.
+  if (!id || !name) return null;
+
+  /* The place as the catalogue holds it, or nothing. NEVER BUILT FROM THE SLUG:
+     "ama-dablam" title-cased is ICEFALL writing a mountain's name for it. */
+  const dest = embedded(row.destinations);
+  const destName = dest && typeof dest.name === "string" && dest.name.trim().length > 0 ? dest.name : null;
 
   return {
     id,
     destinationId,
+    destination:
+      destName === null
+        ? null
+        : {
+            name: destName,
+            kind: dest?.kind === "mountain" || dest?.kind === "trek" ? dest.kind : null,
+          },
+    topic:
+      typeof row.topic === "string" && row.topic.trim().length > 0 ? row.topic.trim() : null,
     name,
     intendedOn: typeof row.intended_on === "string" ? row.intended_on : null,
     createdAt: typeof row.created_at === "string" ? row.created_at : "",
@@ -213,21 +306,29 @@ async function currentUid(): Promise<string | null> {
   return data.session?.user.id ?? null;
 }
 
-async function readGroups(): Promise<SharedGroups> {
-  if (!supabase || !untyped) return { status: "no-backend" };
+/** As much of a PostgREST answer as this list reads. */
+export interface GroupsAnswer {
+  data: unknown;
+  error: PostgrestError | null;
+}
 
-  const uid = await currentUid();
-  if (!uid) return { status: "signed-out" };
+/** One way of asking for a set of columns. `readGroups` builds it from the client. */
+export type GroupsAsk = (columns: string) => PromiseLike<GroupsAnswer>;
 
-  // `member_count` and `joined_by_me` are functions of the row, so PostgREST
-  // serves them like columns. Asking for them by name means a deployment
-  // without them FAILS the request rather than quietly omitting the fields —
-  // which is why a missing count can only ever be a bug, never a silent zero.
-  const { data, error } = await untyped
-    .from("groups")
-    .select(GROUP_COLUMNS)
-    .order("created_at", { ascending: false })
-    .limit(200);
+/**
+ * THE D13 RETRY, with the client held at arm's length so it can be run.
+ *
+ * The subject first, and the columns today's server has if the subject is not
+ * there. Everything this function decides is a sentence somebody reads — "not
+ * live" about a list that IS live is the worst of them — so it takes a way of
+ * asking rather than a Supabase client, and `groupsDiscover.test.ts` drives it
+ * with a server that has the column, one that has not, and one with no table.
+ */
+export async function selectGroups(ask: GroupsAsk): Promise<SharedGroups> {
+  let { data, error } = await ask(GROUP_COLUMNS_WITH_SUBJECT);
+  if (error && absentOptional(error)) {
+    ({ data, error } = await ask(GROUP_COLUMNS));
+  }
 
   if (error) {
     const reason = classify(error);
@@ -236,6 +337,26 @@ async function readGroups(): Promise<SharedGroups> {
 
   const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
   return { status: "ready", groups: rows.flatMap((r) => toGroup(r) ?? []) };
+}
+
+async function readGroups(): Promise<SharedGroups> {
+  if (!supabase || !untyped) return { status: "no-backend" };
+  const client = untyped;
+
+  const uid = await currentUid();
+  if (!uid) return { status: "signed-out" };
+
+  // `member_count` and `joined_by_me` are functions of the row, so PostgREST
+  // serves them like columns. Asking for them by name means a deployment
+  // without them FAILS the request rather than quietly omitting the fields —
+  // which is why a missing count can only ever be a bug, never a silent zero.
+  return selectGroups((columns) =>
+    client
+      .from("groups")
+      .select(columns)
+      .order("created_at", { ascending: false })
+      .limit(200),
+  );
 }
 
 /**

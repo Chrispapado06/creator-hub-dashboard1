@@ -39,6 +39,15 @@ import type { ActivityTypeId } from "@/tracking/types";
 import { useApp } from "@/state/AppState";
 import { usePrimaryGoalWithProgress } from "@/tracking/training";
 import { sync } from "@/services/repository";
+import { SosButton } from "@/mountain/MountainShell";
+import { useMountainModeActive } from "@/mountain/mode";
+import { realTripRunningToday } from "@/mountain/tripModel";
+
+/*
+ * The top of both tracker layouts: clear the notch, or the turnaround alarm's
+ * line when one is up (it publishes its height), whichever is taller.
+ */
+const HEADER_TOP = "calc(1.5rem + max(env(safe-area-inset-top, 0px), var(--icefall-alarm-line-h, 0px)))";
 
 /**
  * Screens 02–05 — live tracking, pause and finish confirmation.
@@ -52,6 +61,9 @@ export default function LiveTracker() {
   const goal = usePrimaryGoalWithProgress();
   const { bodyMassKg, autoPause } = useApp();
   const { settings } = useSettings();
+  // Mountain mode's SOS stays in reach here (plan §2.8); an ordinary run shows none.
+  const mountainMode = useMountainModeActive();
+  const showSos = mountainMode || realTripRunningToday() !== null;
 
   const type = typeId ? activityById(typeId as ActivityTypeId) : null;
   const [params] = useSearchParams();
@@ -97,6 +109,14 @@ export default function LiveTracker() {
     route: urlRoute,
   });
   const boundRoute = rec.route;
+
+  // A restored paused/recording session (rec.resumed) must land straight on
+  // the live view, not the pre-start explainer — otherwise the athlete can't
+  // see that a hike is already running underneath, and a stray tap on "Start
+  // Hiking" would silently resume it with no on-screen sign anything happened.
+  useEffect(() => {
+    if (rec.resumed) setArmed(true);
+  }, [rec.resumed]);
 
   const { snapshot: s } = rec;
 
@@ -240,7 +260,7 @@ export default function LiveTracker() {
           // Full-bleed route (outside AppShell), so this header is the top of
           // the display and must clear the notch itself — the live view below
           // already does.
-          style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top, 0px))" }}
+          style={{ paddingTop: HEADER_TOP }}
         >
           <button
             type="button"
@@ -257,6 +277,7 @@ export default function LiveTracker() {
             <p className="section-label">Ready</p>
             <h1 className="mt-1 truncate text-[20px] font-light text-snow">{type.label}</h1>
           </div>
+          {showSos && <SosButton className="ml-auto" />}
         </div>
 
         {/* THREE SECTIONS, NOT THREE PANELS.
@@ -379,7 +400,7 @@ export default function LiveTracker() {
       {/* Top bar */}
       <div
         className="relative z-20 shrink-0 px-5 pt-6"
-        style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top, 0px))" }}
+        style={{ paddingTop: HEADER_TOP }}
       >
         <div className="flex items-center justify-between gap-2">
           {/* The activity is always legible, even at arm's length in glare —
@@ -392,7 +413,10 @@ export default function LiveTracker() {
               {type.label}
             </span>
           </span>
-          <GpsBadge quality={s.gpsQuality} accuracyM={s.gpsAccuracyM} indoor={type.indoor} />
+          <div className="flex shrink-0 items-center gap-2">
+            <GpsBadge quality={s.gpsQuality} accuracyM={s.gpsAccuracyM} indoor={type.indoor} />
+            {showSos && <SosButton />}
+          </div>
         </div>
         {s.simulated && <SimulatedBadge className="mt-2.5" />}
         {rec.gpsState.status === "denied" && (

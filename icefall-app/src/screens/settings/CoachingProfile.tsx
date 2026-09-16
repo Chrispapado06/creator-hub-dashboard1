@@ -25,7 +25,7 @@ import { canTrainAround } from "@/coach/sessions";
 import { useCoachingBinding } from "@/coach/profileBinding";
 import { useCoachingHydrationState } from "@/settings/hydrate";
 import { useSettings } from "@/settings/store";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { cn } from "@/lib/utils";
 import { fmtDate } from "@/lib/format";
 import type { Equipment } from "@/coach/exercises";
@@ -218,7 +218,7 @@ function outcomeOf(result: CoachingAnswersResult | null): string | null {
 /* -------------------------------------------------------------------------- */
 
 export default function CoachingProfile() {
-  const { coachProfile, user, goals, setGoalTargetDate, canRemoveGoal, bodyMassKgSet } = useApp();
+  const { coachProfile, user, setGoalTargetDate, canRemoveGoal, bodyMassKgSet } = useApp();
   const { settings } = useSettings();
   const { save } = useCoachingBinding();
   const hydration = useCoachingHydrationState();
@@ -227,7 +227,7 @@ export default function CoachingProfile() {
   const [dateNote, setDateNote] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  const objective = goals.find((g) => g.status === "active") ?? null;
+  const objective = usePrimaryGoal() ?? null;
   /* Only an objective this athlete created can be moved — the seeded fixtures
      are DEV-only and are not theirs. `setGoalTargetDate` says so by returning
      false; this asks the same question up front, through `canRemoveGoal`, which

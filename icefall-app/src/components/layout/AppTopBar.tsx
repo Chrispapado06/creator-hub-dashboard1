@@ -72,7 +72,9 @@ export function AppTopBar() {
      name"). Home already greets the person by name in its hero a few lines
      below, and saying it twice on one screen is noise. */
   const { pathname } = useLocation();
-  const showName = pathname !== "/home";
+  /* Every Home — new layout and `/home/classic` alike — follows the rule as the
+     owner wrote it: no name beside the photo on the home page. */
+  const showName = !(pathname === "/home" || pathname.startsWith("/home/"));
 
   /*
    * THE MESSAGES BADGE IS NOW A REAL COUNT, AND THE PARAGRAPH BELOW USED TO SAY

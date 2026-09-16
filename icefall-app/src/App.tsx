@@ -1,6 +1,6 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { AppTopBar } from "@/components/layout/AppTopBar";
 import { PhoneShell } from "@/components/layout/PhoneShell";
@@ -14,14 +14,45 @@ import { useCoachingHydration } from "@/settings/hydrate";
 import { useCoachingBinding } from "@/coach/profileBinding";
 import { useApp } from "@/state/AppState";
 import { DEMO } from "@/offline/offline";
+import { useConnectivity } from "@/trip/connectivity";
 import { GlassFilterDefs } from "@/components/ui/LiquidGlassButton";
 import { OfflineRouteGuard } from "@/offline/OfflineRouteGuard";
+/* MOUNTAIN MODE IS NOT LAZY-LOADED, apart from its Map and Trip tabs. Plan
+   §2.3: a deploy mid-trip can delete the chunk a lazy screen needs, and SOS,
+   Now, Body and the alarm must open from the main file whatever happened. */
+import MountainShell from "@/mountain/MountainShell";
+import MountainBoot from "@/mountain/MountainBoot";
+import MountainIndex from "@/mountain/MountainIndex";
+import MountainNowTab from "@/mountain/NowTab";
+import MountainBodyTab from "@/mountain/BodyTab";
+import MountainSosScreen from "@/mountain/SosScreen";
+/* The Coach in Mountain mode answers from stored answers and rules with no
+   signal, and its safety layer runs before anything else — so it is static like
+   the rest, not a chunk a mid-trip deploy could take away. `MountainCoachOutbox`
+   is the queue's sender and is mounted once, below. */
+import MountainCoachScreen, { MountainCoachOutbox } from "@/mountain/CoachScreen";
+import MountainSettingsScreen from "@/mountain/SettingsScreen";
+import MountainEndTrip from "@/mountain/EndTripScreen";
+import { SafetyLayer } from "@/mountain/SafetyLayer";
+import { MountainModeOffer } from "@/mountain/offer";
+import { LAUNCH_PATHS, bootRedirectFor, consumeBootRedirect } from "@/mountain/boot";
+import { isMountainModePath } from "@/mountain/paths";
+import { clearPendingDebrief, readPendingDebrief } from "@/mountain/endTrip";
+import { useAutoMountainSwitch, useReachabilityWatch } from "@/mountain/useSignal";
+import { useReachability } from "@/connection/reachability";
 
 import Splash from "@/screens/Splash";
 import Home from "@/screens/Home";
+import HomeClassic from "@/screens/HomeClassic";
 
 // Everything past the first paint is split, following the sibling apps' pattern.
-const Onboarding = lazy(() => import("@/screens/Onboarding"));
+// `/onboarding` loads through `OnboardingGate`, not `screens/Onboarding` directly —
+// see that file for why: it is the one thing standing between a held, not-yet-
+// released account and the actual questionnaire when they reach this route by a
+// direct URL or the back button rather than through `nextStepForSession()`.
+const Onboarding = lazy(() => import("@/screens/auth/OnboardingGate"));
+const MountainMapTab = lazy(() => import("@/mountain/MapTab"));
+const MountainTripTab = lazy(() => import("@/mountain/TripTab"));
 
 /**
  * Has this device ever been through onboarding?
@@ -54,10 +85,8 @@ const BookReview = lazy(() => import("@/screens/booking/Review"));
    Fuel screens survive the same way, wrapped as detail views in
    `coach/details.tsx`. */
 const CoachHub = lazy(() => import("@/screens/coach/CoachHub"));
-const CoachToday = lazy(() => import("@/screens/coach/Today"));
 const CoachPlanTab = lazy(() => import("@/screens/coach/Plan"));
 const CoachFuel = lazy(() => import("@/screens/coach/Fuel"));
-const CoachProgressTab = lazy(() => import("@/screens/coach/Progress"));
 const CoachProgress = lazy(() => import("@/screens/coach/CoachProgress"));
 const FuelDetails = lazy(() =>
   import("@/screens/coach/details").then((m) => ({ default: m.FuelDetails })),
@@ -85,6 +114,13 @@ const SignUp = lazy(() => import("@/screens/auth/Auth").then((m) => ({ default: 
 const ChooseHandle = lazy(() =>
   import("@/screens/auth/Handle").then((m) => ({ default: m.ChooseHandle })),
 );
+// Where a verified, handled account waits when ICEFALL is not yet released —
+// see `auth/release.ts` and `screens/auth/Holding.tsx`. Loads through
+// `HoldingGate`, not `screens/Holding` directly — same reason `/onboarding`
+// loads through `OnboardingGate` above: this is what re-checks `APP_RELEASED`
+// every time this route mounts (including the screen's own reload timer),
+// instead of the reload just re-rendering the same dead end forever.
+const Holding = lazy(() => import("@/screens/auth/HoldingGate"));
 const AuthCallback = lazy(() =>
   import("@/screens/auth/Callback").then((m) => ({ default: m.AuthCallback })),
 );
@@ -141,6 +177,15 @@ const ExploreLayout = lazy(() => import("@/screens/ExploreLayout"));
 const Mountains = lazy(() => import("@/screens/Mountains"));
 const TreksScreen = lazy(() => import("@/screens/treks/Treks"));
 const TrekDetail = lazy(() => import("@/screens/treks/TrekDetail"));
+/* THREE DRAFT DIRECTIONS FOR THE TREK DETAIL PAGE — owner's flight note,
+   15 Sep 2026, copying the pattern `/dev/activity-redesign-*` used (handbook
+   §18.54): each is a real screen reading live trek data, gated the same way
+   `/dev/start` is below, so `TrekDetail` above and its live route are never
+   touched. Delete this block, the three files under `screens/treks/
+   redesign/`, and the routes below once the owner picks one. */
+const TrekDetailRedesignA = lazy(() => import("@/screens/treks/redesign/TrekDetailRedesignA"));
+const TrekDetailRedesignB = lazy(() => import("@/screens/treks/redesign/TrekDetailRedesignB"));
+const TrekDetailRedesignC = lazy(() => import("@/screens/treks/redesign/TrekDetailRedesignC"));
 const MountainDetail = lazy(() =>
   import("@/screens/Mountains").then((m) => ({ default: m.MountainDetail })),
 );
@@ -163,9 +208,12 @@ const Notifications = lazy(() => import("@/screens/Notifications"));
 /* Dev-only workbench for picking a Start button. Deleted once one is chosen. */
 const StartOptions = lazy(() => import("@/screens/dev/StartOptions"));
 
-// Expedition network (climbers), distinct from the commercial trips above.
-const CrewExpeditions = lazy(() => import("@/screens/explore/Expeditions"));
-const CreateExpedition = lazy(() => import("@/screens/explore/CreateExpedition"));
+/* The climbers' network, distinct from the commercial trips above.
+   `CrewExpeditions` and `CreateExpedition` were both retired in slice S7: the
+   first was a re-export of Groups that no route used, and the second made a
+   group on one phone, which is not a kind of group ICEFALL has any more
+   (structure plan D1). `/social/groups/new` is the server form below. */
+const CreateGroupPage = lazy(() => import("@/screens/groups/create/CreateGroupPage"));
 const AthleteProfile = lazy(() => import("@/screens/explore/AthleteProfile"));
 const OperatorProfile = lazy(() => import("@/screens/explore/OperatorProfile"));
 const TripDetail = lazy(() => import("@/screens/explore/TripDetail"));
@@ -194,6 +242,9 @@ const Benchmark = lazy(() => import("@/screens/mountain/Benchmark"));
    cold on a mountain. See `src/trip/offline.test.ts`. */
 const TripMode = lazy(() => import("@/screens/trip/TripMode"));
 const LakeLouiseCheck = lazy(() => import("@/screens/trip/LakeLouiseCheck"));
+/* "Ready for no signal" — the checklist you work through BEFORE the trip, while
+   there is still a connection, so it is lazy like its neighbours. */
+const ReadyForNoSignal = lazy(() => import("@/screens/trip/ReadyForNoSignal"));
 
 /* Objectives — the post-trip debrief and the page an operator reads. Lazy for
    the same reason as everything else here, and both are pure client screens:
@@ -244,6 +295,79 @@ function PageLoader() {
  * redirecting during the first async check would bounce a signed-in person to
  * the splash on every cold start. It holds instead.
  */
+/**
+ * THE ONE THING YOU CAN SEE WHEN THE SIGNAL GOES.
+ *
+ * Charlie, 12 September 2026, after testing offline three times: "dont see
+ * nothing mate on offline" and "the locsal host when i open it shows wifi
+ * version". He was right, and the reason was not a bug: the app carried on
+ * working and said nothing, so there was no way to tell the difference between
+ * a cached page and a live one.
+ *
+ * This is the smallest honest thing that fixes that, and it is the first piece
+ * of Mountain mode rather than a stand-in for it: `useConnectivity` already
+ * existed, already refused to trust `navigator.onLine === true`, and already
+ * had nobody rendering it.
+ *
+ * IT ONLY EVER APPEARS FOR "unreachable". The other state is "unknown", not
+ * "online" — a tea-house router with a dead uplink reports a connection — and
+ * a bar claiming you are online would be the exact lie the module was written
+ * to avoid. So there is no green "connected" pill here and there never will be.
+ *
+ * WHAT IT CLAIMS IS NARROW AND TRUE: the pages already saved are readable. It
+ * does not promise the whole app, because the service worker saves the shell
+ * and what you have visited, not everything.
+ */
+/*
+ * MOUNTAIN MODE EXTENDS IT, 14 September 2026: with no signal it now offers
+ * "No signal — switch to Mountain mode?" (`mountain/offer.tsx`) instead of
+ * moving the screen. Dismissing means "not now"; the sentence above returns.
+ * Still null while the phone reports a network, so the online app is unchanged.
+ */
+function OfflineBar() {
+  const signal = useConnectivity();
+  if (signal.state !== "unreachable") return null;
+  return <MountainModeOffer />;
+}
+
+/**
+ * MOUNTAIN MODE'S BACKGROUND WORK, mounted once, inside the router.
+ *
+ * `useReachabilityWatch` is the hook form of `startReachabilityWatch` — called
+ * here rather than the raw function so the shell and the app cannot register two
+ * watches. `useAutoMountainSwitch` switches a running trip into Mountain mode
+ * when the connection is confirmed gone; regaining signal never switches back.
+ */
+function MountainRuntime() {
+  useReachabilityWatch();
+  useAutoMountainSwitch();
+  usePendingDebrief();
+  return null;
+}
+
+/**
+ * A trip ended with no signal writes down that a debrief is owed; this opens it
+ * the next time the connection is CONFIRMED (not `navigator.onLine`).
+ *
+ * NEVER while Mountain mode is open. Signal coming back must not pull somebody
+ * off the mountain screens into the full app's login check — that is the one
+ * rule Mountain mode has about regaining signal, and a debrief is not urgent.
+ */
+function usePendingDebrief() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const reach = useReachability();
+
+  useEffect(() => {
+    if (reach.state !== "reachable") return;
+    if (isMountainModePath(pathname)) return;
+    const owed = readPendingDebrief();
+    if (!owed) return;
+    clearPendingDebrief();
+    navigate(`/objective/${encodeURIComponent(owed.goalId)}/debrief`);
+  }, [reach.state, pathname, navigate]);
+}
+
 function AppShell() {
   const { pathname } = useLocation();
   const { onboarded } = useApp();
@@ -339,6 +463,9 @@ function AppShell() {
       className="relative flex h-full min-h-0 flex-col"
       style={fullScreen ? ({ "--tabbar-clearance": "0px" } as React.CSSProperties) : undefined}
     >
+      {/* Above everything, including the full-screen routes: losing signal on a
+          mountain page is exactly when somebody needs to know. */}
+      <OfflineBar />
       {/* The top bar, on every screen that has the bottom navigation (owner,
           2026-09-04). It clears the notch, so everything below it must not:
           `--screen-safe-top: 0px` on the content wrapper is what stops the
@@ -423,11 +550,36 @@ function NotFound() {
 }
 
 export default function App() {
+  const { pathname } = useLocation();
+  /* THE BOOT DECISION (`mountain/boot.ts`). Asked once per page load, on the
+     launch paths only, synchronously — before the splash timer and before
+     AppShell's login check. Null in every ordinary online start. */
+  const boot = bootRedirectFor(pathname);
+  const booting = boot !== null && LAUNCH_PATHS.includes(pathname);
+  useEffect(() => {
+    if (!booting) consumeBootRedirect();
+  }, [booting]);
+
   return (
     <PhoneShell>
       {/* No-op unless the build is the offline demo. See @/offline/OfflineRouteGuard. */}
       <OfflineRouteGuard />
+      {/* The turnaround alarm and SOS button above Mountain mode and the live
+          tracker. Renders nothing on any other route. */}
+      <SafetyLayer />
+      {/* Mountain mode's background work: the reachability check, the automatic
+          switch when a trip is running and the connection is confirmed gone, and
+          the debrief that was owed from a trip ended with no signal. */}
+      <MountainRuntime />
+      {/* The sender behind queued coach questions. Nothing sends without it. */}
+      <MountainCoachOutbox />
       <Suspense fallback={<PageLoader />}>
+        {booting ? (
+          /* THE BOOT SCREEN (mockup spec §1). It navigates to `boot` itself
+             after a short hold; it used to be an instant <Navigate>, which left
+             a cold start with nothing to read while Mountain mode opened. */
+          <MountainBoot to={boot} />
+        ) : (
         <Routes>
           {/* Offline the athlete is already on the device and already
               onboarded, so the root URL opens the app rather than holding on
@@ -461,6 +613,10 @@ export default function App() {
             one screen covers both rather than two flows drifting apart.
           */}
           <Route path="/auth/handle" element={<ChooseHandle />} />
+          {/* Post-verification waitlist. Outside AppShell, same as every other
+              auth screen: an account that lands here has no `onboarded` flag
+              set and no business inside the gate that checks for one. */}
+          <Route path="/auth/holding" element={<Holding />} />
           {/* Where Google, Apple and Microsoft send the browser back to. */}
           <Route path="/auth/callback" element={<AuthCallback />} />
           {/* Where a password-reset link lands. A recovery link signs you in;
@@ -500,8 +656,34 @@ export default function App() {
           <Route path="/activity/complete/:id" element={<ActivityComplete />} />
           <Route path="/activity/live" element={<Navigate to="/activity/select" replace />} />
 
+          {/*
+            MOUNTAIN MODE — its own layout, OUTSIDE AppShell (plan §2.1, §2.8),
+            beside the live tracker, so nothing in it waits on the login check.
+            The static segments outrank AppShell's `/mountain/:goalId`; do not
+            give a child here the names `conditions`, `checklist` or
+            `benchmark`, which that route uses one level deeper.
+          */}
+          <Route path="/mountain" element={<MountainShell />}>
+            <Route index element={<MountainIndex />} />
+            <Route path="now/*" element={<MountainNowTab />} />
+            <Route path="map/*" element={<MountainMapTab />} />
+            <Route path="body/*" element={<MountainBodyTab />} />
+            <Route path="trip/*" element={<MountainTripTab />} />
+            <Route path="sos" element={<MountainSosScreen />} />
+            {/* Not a fifth tab: reached from a row on Now and Trip. */}
+            <Route path="coach" element={<MountainCoachScreen />} />
+            <Route path="settings" element={<MountainSettingsScreen />} />
+            <Route path="end" element={<MountainEndTrip />} />
+          </Route>
+          {/* THE SYMPTOM CHECK, MOVED OUT OF AppShell (plan §10.4 item 3). It
+              was inside the session gate, which has no time limit, so the one
+              screen whose point is needing no network could hang behind a
+              login check on a dead-but-present network. */}
+          <Route path="/trip/check" element={<LakeLouiseCheck />} />
+
           <Route element={<AppShell />}>
             <Route path="/home" element={<Home />} />
+            <Route path="/home/classic" element={<HomeClassic />} />
 
             <Route path="/activity" element={<ActivityHistory />} />
             <Route path="/search" element={<Search />} />
@@ -543,7 +725,7 @@ export default function App() {
                 NO SHARED `/social` LAYOUT, and that is the considered answer
                 rather than an omission. Each of these three already draws its
                 own chrome: `AthleteProfile` has a cover band with its own back
-                chevron, `GroupWorkspace` and `CreateExpedition` each render a
+                chevron, `GroupWorkspace` and `CreateGroupPage` each render a
                 `ScreenHeader` with a title of their own. Under `ExploreLayout`
                 they were double-headed — two titles, two chevrons. A `SocialLayout`
                 would rebuild exactly that mistake in a new place. They are flat
@@ -572,7 +754,11 @@ export default function App() {
             {/* Static before dynamic for the reader; the router ranks them
                 that way regardless. */}
             <Route path="/social/groups" element={<SocialTabRedirect tab="groups" />} />
-            <Route path="/social/groups/new" element={<CreateExpedition />} />
+            {/* THE ONE FORM THAT MAKES A GROUP. Every door lands here — the +
+                on Social's Groups tab, the pill under the list, People's empty
+                state, `?create=1` on any Social path, and the two legacy
+                `/new` redirects below. */}
+            <Route path="/social/groups/new" element={<CreateGroupPage />} />
             <Route path="/social/groups/:id" element={<GroupWorkspace />} />
 
             {/*
@@ -582,8 +768,7 @@ export default function App() {
 
                 EVERY REDIRECT CARRIES THE QUERY STRING, because on these paths
                 the query string is the destination: `?tab=…` picks Social's
-                sub-tab, `?create=1` opens the create-a-group flow and
-                `?peak=Denali` pre-fills the new-expedition form. A plain
+                sub-tab and `?create=1` opens the create-a-group form. A plain
                 `<Navigate to="/social" replace />` resolves to exactly `/social`
                 and drops all of it — see `SocialRedirect` below.
 
@@ -661,7 +846,11 @@ export default function App() {
               safety surface and must not wait behind a setup form.
             */}
             <Route path="/trip" element={<TripMode />} />
-            <Route path="/trip/check" element={<LakeLouiseCheck />} />
+            {/* What to do now, while there is still a signal, so the phone holds
+                what the mountain needs. Static segment: above nothing, but
+                beside `/trip` rather than inside Mountain mode on purpose — it
+                is a before-you-go screen. */}
+            <Route path="/trip/ready" element={<ReadyForNoSignal />} />
             {/* `new` before `:id` — otherwise the compose route is read as a thread id. */}
             <Route path="/notifications" element={<Notifications />} />
             {/*
@@ -673,6 +862,29 @@ export default function App() {
             */}
             {(import.meta.env.DEV || DEMO) && (
               <Route path="/dev/start" element={<StartOptions />} />
+            )}
+            {/* Treks redesign review — see the comment above the three lazy
+                imports. Each takes the same `:id` the live `/explore/trek/:id`
+                does; the bare path with no id redirects to a real matched
+                trek so a reviewer always lands on a working page. */}
+            {(import.meta.env.DEV || DEMO) && (
+              <>
+                <Route
+                  path="/dev/treks-redesign-a"
+                  element={<Navigate to="/dev/treks-redesign-a/tour-du-mont-blanc" replace />}
+                />
+                <Route path="/dev/treks-redesign-a/:id" element={<TrekDetailRedesignA />} />
+                <Route
+                  path="/dev/treks-redesign-b"
+                  element={<Navigate to="/dev/treks-redesign-b/tour-du-mont-blanc" replace />}
+                />
+                <Route path="/dev/treks-redesign-b/:id" element={<TrekDetailRedesignB />} />
+                <Route
+                  path="/dev/treks-redesign-c"
+                  element={<Navigate to="/dev/treks-redesign-c/tour-du-mont-blanc" replace />}
+                />
+                <Route path="/dev/treks-redesign-c/:id" element={<TrekDetailRedesignC />} />
+              </>
             )}
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:id" element={<ChatThread />} />
@@ -713,9 +925,23 @@ export default function App() {
                   first any more because nothing is: the hub is. The two old
                   screens keep their paths as detail views, so nothing linking
                   to /coach/nutrition or expecting the full calendar lands on a
-                  missing page. */}
+                  missing page.
+
+                  16 SEP 2026 — coach-1to1-spec.md. The owner's mockup folds
+                  Today into the hub's own hero card and folds the standalone
+                  Progress screen into Plan's Schedule|Progress segmented
+                  control (`?view=progress`). Both former destinations are now
+                  redirects rather than routes of their own, per the brief's
+                  §1 "Old routes" rule — every existing link to either path
+                  (Search's quick links, the back chevrons on Recovery/CheckIn/
+                  Readiness/Benchmarks/SkillGaps) still lands somewhere true,
+                  it just lands one hop further on. `src/screens/coach/Today.tsx`
+                  and `Progress.tsx` are UNROUTED, not deleted — no `<Route>`
+                  imports them any more, but their content is what the Hub and
+                  Plan rebuilds read for reference before this pair is finally
+                  removed. */}
               <Route index element={<CoachHub />} />
-              <Route path="today" element={<CoachToday />} />
+              <Route path="today" element={<Navigate to="/coach" replace />} />
               <Route path="chat" element={<CoachChat />} />
               <Route path="plan" element={<CoachPlanTab />} />
               <Route path="plan/calendar" element={<PlanCalendar />} />
@@ -731,7 +957,7 @@ export default function App() {
                   while it is unread, and from Plan at any time. */}
               <Route path="review" element={<WeeklyReview />} />
               <Route path="fuel" element={<CoachFuel />} />
-              <Route path="progress" element={<CoachProgressTab />} />
+              <Route path="progress" element={<Navigate to="/coach/plan?view=progress" replace />} />
               <Route path="progress/history" element={<CoachProgress />} />
               {/* Phase 3. Two screens that measure rather than ask: a repeatable
                   loaded ascent, and the competences this objective wants beside
@@ -820,6 +1046,7 @@ export default function App() {
 
           <Route path="*" element={<NotFound />} />
         </Routes>
+        )}
       </Suspense>
     </PhoneShell>
   );

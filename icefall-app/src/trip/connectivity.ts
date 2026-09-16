@@ -45,21 +45,17 @@
  * IT MAKES NO REQUEST, ON PURPOSE
  * ============================================================================
  *
- * The obvious way to upgrade "unknown" to "online" is to fetch something small
- * and see if it comes back. This module does not, and must not:
+ * It sits on the screen that carries descent advice, and nothing on that path
+ * may depend on a network call — including one whose only job is to say the
+ * network is down. A hung request is a spinner between somebody and "descend".
  *
- *   · It sits on the screen that carries descent advice. Nothing on that path
- *     may depend on a network call, including a network call whose only job is
- *     to say the network is down. A hung request is a spinner between somebody
- *     and the word "descend".
- *   · A probe on a metered satellite connection costs the athlete money to
- *     learn something the screen does not need to know.
- *   · The trip screen computes everything locally anyway. "Are we online?" is
- *     not a question any figure on it depends on — it is context for the
- *     athlete, and context is not worth a request.
- *
- * The honest consequence is that ICEFALL says "not checked" rather than
- * "online", forever. That is the true sentence.
+ * The reachability check (plan §2.7) therefore lives in
+ * `connection/reachability.ts`, which this file never imports. Once that check
+ * has CONFIRMED nothing is reachable (repeated failures over ~10 s) it pushes a
+ * yes/no verdict in through `setNothingReachable`. The verdict can only move
+ * the answer towards "unreachable": a success never overrides the phone saying
+ * there is no network, and there is still no "online" state here. The positive
+ * "last reachable" answer belongs to the check itself.
  */
 
 import { useEffect, useState } from "react";
@@ -85,23 +81,64 @@ export const UNKNOWN: ConnectivitySignal = {
   state: "unknown",
   label: "Network not checked",
   detail:
-    "Your phone reports a network connection, which is not the same as anything being reachable through it — a tea-house router with a dead uplink reports exactly this. ICEFALL has not checked, and deliberately does not check: it will not put a network request in front of a screen that carries descent advice. Nothing here needs one either way.",
+    "Your phone reports a network connection, which is not the same as anything being reachable through it — a tea-house router with a dead uplink reports exactly this. This screen never waits on a network request, because it carries descent advice. Nothing here needs one either way.",
 };
+
+export const NOTHING_REACHABLE: ConnectivitySignal = {
+  state: "unreachable",
+  label: "No signal",
+  detail:
+    "Your phone says it is connected, but ICEFALL tried several times and could not reach anything through it. Nothing on this screen needs a signal.",
+};
+
+/* The confirmed verdict from the reachability check. Module state rather than
+   an import, so the safety core's closure stays free of anything that calls out. */
+let nothingReachable = false;
+const verdictListeners = new Set<() => void>();
+
+/** Called by the reachability check only. True = confirmed nothing reachable. */
+export function setNothingReachable(on: boolean): void {
+  if (nothingReachable === on) return;
+  nothingReachable = on;
+  verdictListeners.forEach((fn) => fn());
+}
+
+/** Change notifications for the signal: interface events plus the confirmed verdict. */
+export function subscribeConnectivity(fn: () => void): () => void {
+  verdictListeners.add(fn);
+  const hasWindow = typeof window !== "undefined";
+  if (hasWindow) {
+    window.addEventListener("online", fn);
+    window.addEventListener("offline", fn);
+  }
+  return () => {
+    verdictListeners.delete(fn);
+    if (hasWindow) {
+      window.removeEventListener("online", fn);
+      window.removeEventListener("offline", fn);
+    }
+  };
+}
 
 /** The current signal, computed with no side effects and no request. */
 export function readConnectivity(): ConnectivitySignal {
+  /* The Mountain mode review switch (`offline/offline.ts` FORCE_MOUNTAIN).
+     Read inline rather than imported so this file keeps zero imports of its
+     own, and so the branch folds away in a normal build. */
+  if (import.meta.env.VITE_ICEFALL_FORCE_MOUNTAIN === "1") return UNREACHABLE;
   /* `navigator` is absent under the test runner and in any non-DOM context.
      Absent means unknown, which is the honest reading — not "online". */
-  if (typeof navigator === "undefined") return UNKNOWN;
-  return navigator.onLine === false ? UNREACHABLE : UNKNOWN;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return UNREACHABLE;
+  if (nothingReachable) return NOTHING_REACHABLE;
+  return UNKNOWN;
 }
 
 /**
  * The signal, kept current.
  *
- * Subscribes to the browser's own `online`/`offline` events, which cost
- * nothing and fire when the interface genuinely changes. There is no polling
- * and no timer: a trip screen open in a tent overnight must not wake the radio.
+ * Listens to the browser's own `online`/`offline` events and the confirmed
+ * verdict. No polling and no timer here: a trip screen open in a tent
+ * overnight must not wake the radio.
  */
 export function useConnectivity(): ConnectivitySignal {
   const [signal, setSignal] = useState<ConnectivitySignal>(readConnectivity);
@@ -109,12 +146,7 @@ export function useConnectivity(): ConnectivitySignal {
   useEffect(() => {
     const update = () => setSignal(readConnectivity());
     update();
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
+    return subscribeConnectivity(update);
   }, []);
 
   return signal;

@@ -32,7 +32,7 @@ import {
 import { treksForMountain } from "@/treks";
 import { Sheet, SheetRow } from "@/components/ui/Sheet";
 import { ProgressRing } from "@/components/ui/charts";
-import { Rise, Screen, Stagger, TABBAR_STICKY_BOTTOM } from "@/components/layout/chrome";
+import { Rise, Screen, Stagger, TABBAR_STICKY_BOTTOM, useDetailBack } from "@/components/layout/chrome";
 import { GearCard } from "@/components/domain/cards";
 import { PhotoGallery } from "@/components/domain/PhotoGallery";
 import { ObjectiveActions, type MountainRef } from "@/components/domain/ObjectiveActions";
@@ -1143,10 +1143,15 @@ function MountainHero({
   const tier = tierOf(curated);
   const country = countryOf(data, facts);
   const goal = data.goal;
+  const goBack = useDetailBack(data.backTo);
   const [frame, setFrame] = useState(0);
   const [options, setOptions] = useState(false);
   const images = gallery.images;
   const i = Math.min(frame, Math.max(0, images.length - 1));
+  // A photograph that cannot load (a Commons URL with no network) is hidden
+  // rather than drawn as the browser's broken-image glyph over the hero; the
+  // slate ground and the credit line stay, which is the honest blank.
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
   /*
    * THE NAME ON THE LOCAL MAP BELONGS AT THE TOP OF THE PAGE.
    *
@@ -1181,22 +1186,27 @@ function MountainHero({
         <img
           src={images[i]}
           alt={data.name}
+          onError={() => setBrokenSrc(images[i] ?? null)}
           className={cn(
             "absolute inset-0 h-full w-full object-cover transition-opacity duration-500",
             gallery.verified ? "opacity-100" : "opacity-50",
+            brokenSrc !== null && brokenSrc === images[i] && "invisible",
           )}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/70 to-obsidian/40" />
         <div className="absolute inset-0 bg-obsidian/25" />
 
         <div className="absolute inset-x-0 top-0 flex items-center gap-2 p-4">
-          <Link
-            to={data.backTo}
+          {/* Back to wherever the reader came from — Home's explore cards, search,
+              a saved list — and to the list itself only on a cold open. */}
+          <button
+            type="button"
+            onClick={goBack}
             aria-label="Back"
             className="grid h-9 w-9 place-items-center rounded-full border border-hairline bg-obsidian/60 text-snow backdrop-blur transition-colors hover:border-azure/50"
           >
             <ChevronRight size={17} strokeWidth={1.7} className="rotate-180" />
-          </Link>
+          </button>
           <span className="flex-1" />
           <HeroSave data={data} facts={facts} />
           <button

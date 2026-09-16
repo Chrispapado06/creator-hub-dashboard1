@@ -543,8 +543,10 @@ export async function trailById(osmId: number, signal?: AbortSignal): Promise<Tr
     if (hit) return hit;
   }
   // No Overpass offline. A warm list covers anything reached from a search;
-  // beyond that the sample routes resolve so a detail link never dead-ends.
-  if (OFFLINE) return offlineTrailById(osmId);
+  // beyond that the sample routes resolve, and then the prebuilt country
+  // files — they ship inside the bundle, so a cold load (a refresh, a saved
+  // trail) of a trail Find listed opens instead of bouncing back to Find.
+  if (OFFLINE) return offlineTrailById(osmId) ?? (await trailFromIndexes(osmId, signal));
 
   /*
    * THE PREBUILT INDEXES, BEFORE THE NETWORK. This is a cold deep link — a

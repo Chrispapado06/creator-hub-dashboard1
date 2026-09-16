@@ -100,7 +100,7 @@ export type SearchHit = {
   to: string;
   /** Omitted rather than filled with a placeholder. */
   imageUrl?: string;
-  /** An honesty note, e.g. "Placeholder group". */
+  /** An honesty note, e.g. "Example". */
   note?: string;
 };
 

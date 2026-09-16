@@ -36,6 +36,12 @@ import type { Availability } from "@/guides/types";
 
 const WEEKDAY = ["M", "T", "W", "T", "F", "S", "S"];
 
+const TONE_TEXT: Record<"in" | "edge" | "off", string> = {
+  in: "text-summit",
+  edge: "text-mist",
+  off: "text-mist-dim",
+};
+
 /** Local `YYYY-MM-DD`. Never `toISOString()`, which is UTC and shifts the day west of Greenwich. */
 function dayKey(d: Date): string {
   const m = `${d.getMonth() + 1}`.padStart(2, "0");
@@ -66,6 +72,9 @@ export function AvailabilityCalendar({
   onPick,
   className,
   layout = "strip",
+  monthBadge,
+  dayTone,
+  restrictOffSeason = false,
 }: {
   /**
    * Seeds the demo pattern. A guide's id on their own screen; a stable
@@ -88,6 +97,23 @@ export function AvailabilityCalendar({
    * the strip it was drawn with.
    */
   layout?: "strip" | "month";
+  /**
+   * Month layout only. A short status for the month currently on screen —
+   * "In season", "Edge of the season" and so on. This component holds no
+   * domain knowledge of what a season is; the caller hands over a finished
+   * label and a tone, and this just colours it. Omit for no badge at all,
+   * which is every caller except the guide search.
+   */
+  monthBadge?: (year: number, month0: number) => { label: string; tone: "in" | "edge" | "off" } | null;
+  /**
+   * Month layout only. Per-day season status, used to dim days outside the
+   * window the caller has evidence for, and — with `restrictOffSeason` — to
+   * stop them being picked at all. Omit and every day renders exactly as it
+   * always has.
+   */
+  dayTone?: (day: Date) => "in" | "edge" | "off" | null;
+  /** Month layout only. When true, a day `dayTone` marks `"off"` cannot be picked. */
+  restrictOffSeason?: boolean;
 }) {
   const [anchor, setAnchor] = useState(() => new Date(from));
   const showDots = (SHOW_DEMO_DATA || DEMO) && seed !== undefined;
@@ -141,9 +167,17 @@ export function AvailabilityCalendar({
         >
           <ChevronLeft size={17} strokeWidth={1.7} />
         </button>
-        <p className="text-[13.5px] text-snow">
-          {anchor.toLocaleDateString("en-GB", { month: "short", year: "numeric" })}
-        </p>
+        <span className="flex flex-col items-center">
+          <p className="text-[13.5px] text-snow">
+            {anchor.toLocaleDateString("en-GB", { month: "short", year: "numeric" })}
+          </p>
+          {(() => {
+            if (layout !== "month" || !monthBadge) return null;
+            const badge = monthBadge(anchor.getFullYear(), anchor.getMonth());
+            if (!badge) return null;
+            return <span className={cn("text-[10px]", TONE_TEXT[badge.tone])}>{badge.label}</span>;
+          })()}
+        </span>
         <button
           type="button"
           aria-label="Next month"
@@ -174,11 +208,15 @@ export function AvailabilityCalendar({
               const isEnd = key === fromKey || key === toKey;
               const inRange = key > fromKey && key < toKey;
               const status = showDots && seed !== undefined ? demoAvailability(seed, key) : null;
+              const tone = dayTone?.(d) ?? null;
+              const disabled = restrictOffSeason && tone === "off";
 
               return (
                 <button
                   key={key}
                   type="button"
+                  disabled={disabled}
+                  aria-disabled={disabled}
                   onClick={() => onPick?.(d)}
                   className={cn(
                     "flex aspect-square flex-col items-center justify-center gap-1 rounded-full text-[13.5px] transition-colors",
@@ -186,7 +224,10 @@ export function AvailabilityCalendar({
                       ? "bg-azure font-medium text-obsidian"
                       : inRange
                         ? "bg-azure/[0.18] text-snow"
-                        : "text-snow hover:bg-white/[0.06]",
+                        : tone === "off"
+                          ? "text-mist-dim hover:bg-white/[0.06]"
+                          : "text-snow hover:bg-white/[0.06]",
+                    disabled && "pointer-events-none opacity-40 hover:bg-transparent",
                   )}
                 >
                   <span>{d.getDate()}</span>

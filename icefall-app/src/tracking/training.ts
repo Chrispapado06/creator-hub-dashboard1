@@ -21,6 +21,9 @@ import type {
   TrainingPlan,
   TrainingWeek,
 } from "@/types";
+import { pickPrimaryGoal } from "@/objectives/primaryGoal";
+import { useDayKey } from "@/lib/useDayKey";
+import { useDebriefedGoalIds } from "@/objectives/objectiveDebrief";
 
 /**
  * Goal-driven training.
@@ -914,13 +917,14 @@ export function useTraining(goalOverride?: Goal): TrainingState {
   const feed = useActivityFeed();
   const adjustments = useAdjustments();
 
+  /* The date is an input twice over: which objective is primary, and which plan
+     day is "today". Without it an app left open past midnight keeps both. */
+  const day = useDayKey();
+  const debriefed = useDebriefedGoalIds();
   const goal = useMemo(
-    () =>
-      goalOverride ??
-      goals
-        .filter((g) => g.status === "active")
-        .sort((a, b) => +new Date(a.targetDate) - +new Date(b.targetDate))[0],
-    [goalOverride, goals],
+    () => goalOverride ?? pickPrimaryGoal(goals, new Date(), debriefed),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `day` re-picks at midnight
+    [goalOverride, goals, day, debriefed],
   );
 
   return useMemo(() => {
@@ -974,11 +978,13 @@ export function useTraining(goalOverride?: Goal): TrainingState {
       currentWeek: plan.weeks.find((w) => w.index === plan.currentWeek) ?? plan.weeks[0],
       strandedAdjustments: stranded,
     };
-  }, [goal, feed, isSessionComplete, shape, adjustments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `day` rebuilds "today" at midnight
+  }, [goal, feed, isSessionComplete, shape, adjustments, day]);
 }
 
 /** Goals with derived preparation, for anywhere a goal is rendered. */
 export function useGoalsWithProgress(): Goal[] {
+  const day = useDayKey();
   const { goals } = useApp();
   const feed = useActivityFeed();
   const { isSessionComplete } = useApp();
@@ -1012,17 +1018,15 @@ export function useGoalsWithProgress(): Goal[] {
           preparation: computePreparation(goal, plan, completedByDate, feed, mountain).percent,
         };
       }),
-    [goals, feed, isSessionComplete, shape, adjustments],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `day`: plans and preparation are "as of today"
+    [goals, feed, isSessionComplete, shape, adjustments, day],
   );
 }
 
 export function usePrimaryGoalWithProgress(): Goal | undefined {
   const goals = useGoalsWithProgress();
-  return useMemo(
-    () =>
-      goals
-        .filter((g) => g.status === "active")
-        .sort((a, b) => +new Date(a.targetDate) - +new Date(b.targetDate))[0],
-    [goals],
-  );
+  const day = useDayKey();
+  const debriefed = useDebriefedGoalIds();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `day` re-picks at midnight
+  return useMemo(() => pickPrimaryGoal(goals, new Date(), debriefed), [goals, day, debriefed]);
 }

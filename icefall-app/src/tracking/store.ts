@@ -1,14 +1,23 @@
 import type { RecordedActivity } from "./types";
+import {
+  ACTIVITIES_KEY,
+  isActivitiesOnDevice,
+  normaliseActivity,
+  readDeviceActivities,
+  removeDeviceActivity,
+  writeDeviceActivity,
+} from "@/device/migrateActivities";
 
 /**
  * Persistence for recorded activities.
  *
- * localStorage today; the shape is deliberately a plain serialisable record so
- * swapping in IndexedDB (for long tracks) or a server sync layer is a change
- * here and nowhere else.
+ * The browser bucket until `device/migrateActivities.ts` has moved the history
+ * into the on-device database and verified it; the database after. Callers
+ * stay synchronous either way — in device mode they read an in-memory copy.
+ * Point stripping (PH-01) and the `origin` default live in `normaliseActivity`.
  */
 
-const KEY = "icefall.activities.v1";
+const KEY = ACTIVITIES_KEY;
 const META_KEY = "icefall.athlete.v1";
 
 export interface AthleteMeta {
@@ -28,55 +37,28 @@ function thin<T>(arr: T[], max: number): T[] {
   return out;
 }
 
-/**
- * PH-01 — REMOVED FROM THE SYSTEM, NOT JUST FROM THE CODE.
- *
- * The owner asked for points to be removed from the system. Deleting the
- * engine, the fields and the screens does not touch a record already sitting in
- * `icefall.activities.v1` on somebody's phone: this function parsed stored JSON
- * straight into the type with no normalisation, so `points_awarded` and
- * `pointsBreakdown` would have survived every code change and come back out in
- * the data export (`settings/Sections.tsx` walks every `icefall.*` key
- * wholesale, so no search for "points" would ever have shown it).
- *
- * They are stripped here, on the one read path every caller goes through. The
- * write path then persists the cleaned record, so the fields disappear from the
- * device the first time anything saves — no migration step, no version flag,
- * and nothing to run.
- *
- * `points` — the GPS track — is deliberately untouched.
- */
-type LegacyPointsFields = { points_awarded?: unknown; pointsBreakdown?: unknown };
-
 export function loadActivities(): RecordedActivity[] {
+  const onDevice = readDeviceActivities();
+  if (onDevice) return onDevice;
   if (typeof localStorage === "undefined") return [];
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as RecordedActivity[];
+    const parsed = JSON.parse(raw) as unknown[];
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((a) => {
-      const {
-        points_awarded: _p,
-        pointsBreakdown: _b,
-        origin,
-        ...rest
-      } = a as RecordedActivity & LegacyPointsFields & { origin?: RecordedActivity["origin"] };
-      // Same no-migration pattern, for the same reason: `origin` is REQUIRED on
-      // `RecordedActivity` (see tracking/types.ts), but every record already on
-      // a device predates the field. `{ kind: "icefall" }` is true of every one
-      // of them — nothing on this device was ever anything else — used only
-      // when the stored record has no origin of its own.
-      return { ...rest, origin: origin ?? { kind: "icefall" } } as RecordedActivity;
-    });
+    return parsed.map(normaliseActivity);
   } catch {
     return [];
   }
 }
 
 export function saveActivity(a: RecordedActivity): RecordedActivity[] {
-  const all = loadActivities();
   const trimmed: RecordedActivity = { ...a, points: thin(a.points, MAX_POINTS_STORED) };
+  if (isActivitiesOnDevice()) {
+    writeDeviceActivity(trimmed);
+    return readDeviceActivities() ?? [];
+  }
+  const all = loadActivities();
   const next = [trimmed, ...all.filter((x) => x.id !== a.id)];
   try {
     localStorage.setItem(KEY, JSON.stringify(next));
@@ -92,6 +74,10 @@ export function saveActivity(a: RecordedActivity): RecordedActivity[] {
 }
 
 export function deleteActivity(id: string): RecordedActivity[] {
+  if (isActivitiesOnDevice()) {
+    removeDeviceActivity(id);
+    return readDeviceActivities() ?? [];
+  }
   const next = loadActivities().filter((a) => a.id !== id);
   try {
     localStorage.setItem(KEY, JSON.stringify(next));

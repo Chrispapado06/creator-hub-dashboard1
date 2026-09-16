@@ -25,7 +25,7 @@ import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome"
 import { MountainBackdrop, MountainThumb } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
 import { sync } from "@/services/repository";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import type { MountainRoute } from "@/types";
 // `CREDENTIAL_CLAIM_NOTICE` is not imported here on purpose: `Credentials` from
 // `./shared` renders it above its own list, and a second copy on this screen is
@@ -178,16 +178,15 @@ export function GuideRequest() {
    * soonest active objective. Prefill is a convenience and it is labelled — the
    * athlete may be asking about something entirely different.
    */
+  const primaryGoal = usePrimaryGoal();
   const goal = useMemo(() => {
     const named = params.get("goal");
     if (named) {
       const match = goals.find((g) => g.id === named);
       if (match) return match;
     }
-    return goals
-      .filter((g) => g.status === "active")
-      .sort((a, b) => +new Date(a.targetDate) - +new Date(b.targetDate))[0];
-  }, [goals, params]);
+    return primaryGoal;
+  }, [goals, params, primaryGoal]);
 
   const prefilledMountain = params.get("peak") ?? goal?.name ?? "";
   const prefilledElevation = Number(params.get("elevation")) || goal?.elevationM;

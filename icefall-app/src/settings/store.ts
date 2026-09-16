@@ -150,6 +150,13 @@ export interface SettingsState {
   /** The intent the activity screen opens on. See coach/sessionIntent.ts. */
   trainingIntent?: string;
 
+  /* Home */
+  /**
+   * Which Home this device shows. The owner kept the previous Home when the
+   * eight-state redesign replaced it (2026-09-16); absent means the new one.
+   */
+  homeLayout?: "new" | "classic";
+
   /* Recording — remembered between sessions so the athlete sets them once. */
   /** Carried load in kilograms. Feeds nothing automatic; it is a record. */
   packWeightKg?: number;

@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useReducedMotion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
-import { Button, Card } from "@/components/ui/primitives";
+import { Button, Card, Disclaimer } from "@/components/ui/primitives";
 import { CommentThread } from "@/components/domain/CommentThread";
 import { OwnPostCard } from "@/components/domain/PostComposer";
 import { SummitLogCard } from "@/components/domain/SummitLogKit";
@@ -16,6 +16,15 @@ import {
   type PostLookupState,
   type PostSubject,
 } from "@/social/posts";
+import {
+  COMMUNITY_DEMO_NOTICE,
+  SHOW_DEMO_COMMUNITY,
+  communityPosts,
+  feedDetail,
+  feedPost,
+  type CommunityPostDetail,
+} from "@/social/community";
+import type { Post } from "@/social/types";
 import { useRecordedActivities } from "@/tracking/feed";
 import { useSettings } from "@/settings/store";
 import { useApp } from "@/state/AppState";
@@ -52,6 +61,36 @@ import { useApp } from "@/state/AppState";
  * server conversation for a server row — rather than the device-local thread
  * the two local branches use. Writing a comment here and finding it missing
  * from the sheet the feed opens would be one post with two threads.
+ *
+ * ── AND A FOURTH, ADDED 2026-09-13 SO THE FEED'S OWN TAP HAS SOMEWHERE HONEST
+ * TO LAND ────────────────────────────────────────────────────────────────────
+ *
+ * `explore/Community.tsx`'s feed is demo content until posting ships (see that
+ * file's own header) — invented ids like `p-summit-1` that `postIdKind` (in
+ * `@/social/posts`, not this file's to change) correctly calls `unknown`,
+ * because no server row and no device store could ever hold one. Before this,
+ * that was indistinguishable from a genuinely bad link: both resolved to
+ * `gone`. The Feed tapping through to "No post here" on every card it shows —
+ * OWNER'S RULING, 2026-09-13, "when you click on the post… same way you click
+ * a post on x" — would have been ICEFALL calling its own visible feed broken.
+ *
+ * So `gone` is now checked against the demo feed FIRST, and only a
+ * `POST_LINK_MALFORMED` miss there falls through to the honest empty page
+ * below. `feedPost`/`feedDetail` (`@/social/community`) are the SAME adapter
+ * the feed itself renders through — reused, not re-implemented, so a demo
+ * post cannot read one way in the feed and another way here. It draws through
+ * `PostCard` exactly like a `server` subject, says so with the feed's own
+ * demo notice, and gets a DEVICE-LOCAL comment thread rather than
+ * `PostThread` — there is no `posts` row behind it for a real comment to
+ * attach to, so this is the same honest fallback the two local subjects
+ * already use, not a fourth thread implementation.
+ *
+ * WHY THIS IS NOT A FIFTH CASE OF THE "GONE" TABLE BELOW. It is not a new
+ * meaning for an empty page; it is a fact this module could not have known
+ * about a link's own id shape until asked to render one the Feed actually
+ * shows. `SHOW_DEMO_COMMUNITY` (and therefore `communityPosts()`) is `[]` in
+ * a build with a real feed, so this whole branch is inert there and `gone`
+ * keeps meaning exactly what the table says.
  *
  * ── THIS SCREEN DECIDES NOTHING ──────────────────────────────────────────────
  *
@@ -105,6 +144,14 @@ export default function PostDetail() {
   );
 }
 
+/**
+ * `PostSubject` (from `@/social/posts`, not this file's to widen) plus the
+ * fourth case that module cannot know about: a demo Feed post, adapted
+ * exactly the way `explore/Community.tsx` adapts it. See the module doc's
+ * fourth-subject section above for why this lives here rather than there.
+ */
+type Resolved = PostSubject | { kind: "demo"; post: Post; detail: CommunityPostDetail };
+
 function PostBody({ id, onRetry }: { id: string; onRetry: () => void }) {
   const { subject, state, message } = usePostSubject(id);
   const recorded = useRecordedActivities();
@@ -132,8 +179,30 @@ function PostBody({ id, onRetry }: { id: string; onRetry: () => void }) {
     avatar: settings.avatar,
   };
 
+  /* Frozen at mount, same reasoning as the feed's own `now` in
+     `explore/Community.tsx`: recomputing it every render would move a demo
+     post's "3h ago" forward as the page re-renders. Computed unconditionally
+     because hooks cannot sit behind the `if`s below. */
+  const [now] = useState(() => Date.now());
+
+  /**
+   * The fourth subject. Only ever consulted where `usePostSubject` has
+   * already ruled the id neither a server uuid nor a device id — a `gone`
+   * whose message is specifically `POST_LINK_MALFORMED` — and empty in any
+   * build with no demo feed to match against (`communityPosts()` is `[]`
+   * there). See the module doc above for the reasoning in full.
+   */
+  const demoPost = useMemo(() => {
+    if (subject || state !== "gone" || message !== POST_LINK_MALFORMED) return null;
+    return communityPosts().find((p) => p.id === id) ?? null;
+  }, [subject, state, message, id]);
+
+  const resolved: Resolved | null =
+    subject ??
+    (demoPost ? { kind: "demo", post: feedPost(demoPost, now), detail: feedDetail(demoPost) } : null);
+
   if (state === "loading") return <OpeningPost back={back} message={message} />;
-  if (!subject) return <NoPost state={state} message={message} onRetry={onRetry} back={back} />;
+  if (!resolved) return <NoPost state={state} message={message} onRetry={onRetry} back={back} />;
 
   /**
    * The card's comment control scrolls to the thread rather than opening one:
@@ -147,54 +216,68 @@ function PostBody({ id, onRetry }: { id: string; onRetry: () => void }) {
   return (
     <Screen padded={false}>
       <div className="px-5">
-        <ScreenHeader title={titleFor(subject)} back={back} />
+        <ScreenHeader title={titleFor(resolved)} back={back} />
       </div>
 
       {/* `Stagger` animates its DIRECT CHILDREN ONLY — a wrapper between it and
           these two would leave the whole page sitting at opacity 0. */}
       <Stagger className="px-5 pb-8">
         <Rise>
-          {subject.kind === "device-post" ? (
-            <OwnPostCard post={subject.post} author={me} recorded={recorded} />
-          ) : subject.kind === "device-log" ? (
-            <SummitLogCard log={subject.log} author={me} />
+          {resolved.kind === "device-post" ? (
+            <OwnPostCard post={resolved.post} author={me} recorded={recorded} />
+          ) : resolved.kind === "device-log" ? (
+            <SummitLogCard log={resolved.log} author={me} />
           ) : (
-            <PostCard
-              post={subject.post}
-              onOpenComments={toThread}
-              onReport={(post) => setReporting(post.id)}
-            />
+            <>
+              <PostCard
+                post={resolved.post}
+                detail={resolved.kind === "demo" ? resolved.detail : undefined}
+                onOpenComments={toThread}
+                onReport={(post) => setReporting(post.id)}
+              />
+              {/* Said on the card's own page, not only back on the feed it came
+                  from — a reader who arrived here from a notification or a
+                  shared link never saw the feed's own notice. */}
+              {resolved.kind === "demo" && SHOW_DEMO_COMMUNITY && (
+                <Disclaimer className="mt-3">{COMMUNITY_DEMO_NOTICE}</Disclaimer>
+              )}
+            </>
           )}
         </Rise>
 
         <Rise className="pt-6">
           <div ref={thread} className="space-y-3.5 scroll-mt-4">
-            {subject.kind === "server" ? (
-              /* The real thread, from `post_comments`, through the component
-                 the feed's own comment sheet uses — same test, same rows, and a
-                 reply lands in the same place from either screen. */
-              <PostThread post={subject.post} />
+            {resolved.kind === "server" ? (
+              /* The real thread, from `post_comments`, through the same
+                 component the feed's own detail links resolve to — same
+                 test, same rows, and a reply lands in the same place from
+                 either screen. */
+              <PostThread post={resolved.post} />
             ) : (
-              /* A post written on this phone has no row for a comment to hang
-                 off, so it keeps the device thread it has always had. */
+              /* Neither a post written on this phone nor a demo post has a
+                 server row for a comment to hang off, so both keep the
+                 device-local thread the two local subjects have always used
+                 — the same honest fallback, not a fourth implementation. */
               <CommentThread subjectId={id} me={me} />
             )}
           </div>
         </Rise>
       </Stagger>
 
-      {/* Keyed by post id and empty until one is set. Only a post with a row on
-          the server can be reported — `reports` takes a post id, and there is
-          nothing to file against a post that exists on one phone — so
-          `PostCard` is the only card here that raises it. */}
+      {/* Keyed by post id and empty until one is set. A post you wrote on this
+          phone has nobody to report it to, so only the `PostCard` branches
+          above — `server` and `demo` — raise this; the two device branches
+          never do. `reports` taking a post id it cannot honour for a demo id
+          is the same thing the feed's own Report control already lives with
+          today, unchanged by this page. */}
       <ReportDialog postId={reporting} onClose={() => setReporting(null)} />
     </Screen>
   );
 }
 
 /** A summit log says so in the header; everything else is a post. */
-function titleFor(subject: PostSubject): string {
-  return subject.kind === "device-log" ? "Summit log" : "Post";
+function titleFor(resolved: Resolved): string {
+  return resolved.kind === "device-log" ? "Summit log" : "Post";
 }
 
 /* -------------------------------------------------------------------------- */

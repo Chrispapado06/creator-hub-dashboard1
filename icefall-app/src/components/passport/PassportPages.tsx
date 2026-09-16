@@ -147,7 +147,7 @@ function FigureLine({
  * reader's trust.
  */
 function ExperiencePage({ passport }: { passport: Passport }) {
-  const { highestAltitude: alt, summits, expeditions, technicalLevel, identity } = passport;
+  const { highestAltitude: alt, summits, groupsStarted, technicalLevel, identity } = passport;
 
   return (
     <div>
@@ -193,12 +193,14 @@ function ExperiencePage({ passport }: { passport: Passport }) {
         )}
       </Entry>
 
-      <Entry label="Expeditions created" note={expeditions.note}>
-        {expeditions.count === 0 ? (
-          <p className="text-[12px] text-mist">None created.</p>
+      <Entry label="Groups started" note={groupsStarted.note}>
+        {groupsStarted.count === 0 ? (
+          <p className="text-[12px] text-mist">
+            {groupsStarted.serverCounted ? "None started." : "None on this phone."}
+          </p>
         ) : (
           <FigureLine
-            value={String(expeditions.count)}
+            value={String(groupsStarted.count)}
             chip={<ProvenanceChip kind="user-added" />}
           />
         )}
@@ -1101,11 +1103,13 @@ export function MountainCv({ passport }: { passport: Passport }) {
         </CvSection>
 
         <CvSection title="Expedition history">
-          <p className="text-[10.5px] leading-relaxed text-mist">{passport.expeditions.note}</p>
+          <p className="text-[10.5px] leading-relaxed text-mist">{passport.groupsStarted.note}</p>
           <p className="tnum mt-1.5 text-[11px] text-snow">
-            {passport.expeditions.count === 0
-              ? "None created"
-              : `${passport.expeditions.count} created`}
+            {passport.groupsStarted.count === 0
+              ? passport.groupsStarted.serverCounted
+                ? "No groups started"
+                : "None on this phone"
+              : `${passport.groupsStarted.count} ${passport.groupsStarted.count === 1 ? "group" : "groups"} started`}
           </p>
           {passport.upcoming.length > 0 && (
             <div className="mt-2.5">

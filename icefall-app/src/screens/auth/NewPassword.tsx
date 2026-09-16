@@ -53,9 +53,15 @@ export function NewPassword() {
 
     const step = await nextStepForSession();
     setBusy(false);
-    navigate(step === "handle" ? "/auth/handle" : step === "onboarding" ? "/onboarding" : "/home", {
-      replace: true,
-    });
+    const dest =
+      step === "handle"
+        ? "/auth/handle"
+        : step === "holding"
+          ? "/auth/holding"
+          : step === "onboarding"
+            ? "/onboarding"
+            : "/home";
+    navigate(dest, { replace: true });
   }
 
   return (

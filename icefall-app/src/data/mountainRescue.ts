@@ -79,16 +79,104 @@ export interface Source {
 }
 
 /**
- * A number to dial. `number` is a string on purpose: "112", "1414",
+ * What kind of contact this is (plan §5.1). The data legitimately holds
+ * "VHF 142.800" beside "+33 4 50 53 16 89", so any code that builds a phone
+ * link out of every row produces a dead tap. The kind is a field rather than
+ * something a regular expression guesses at the last moment.
+ */
+export type ContactKind = "dial" | "radio" | "sms";
+
+/**
+ * A way of reaching help. `number` is a string on purpose: "112", "1414",
  * "+33 4 50 53 16 89" and "VHF 142.800" are all dialling strings rather than
  * integers, and a leading zero matters.
  */
 export interface EmergencyNumber {
   number: string;
   label: string;
+  contact: ContactKind;
+  /**
+   * The exact characters a `tel:` link uses — no spaces (plan §5.9). Set on
+   * every international number, because "+33 4 50 53 16 89" makes a malformed
+   * link. `number` stays the readable form.
+   */
+  dial?: string;
   /** The caveat the source attaches — coverage, language, what it does not do. */
   note?: string;
   source: Source;
+  /**
+   * The day this number was read off its page, when that differs from the day
+   * the source itself was read. Plan §5.2's first date; the second is the
+   * country's confirmation date, which lives on the review.
+   */
+  readOn?: string;
+}
+
+/* ---------------------------------------------------------------- Review -- */
+
+/** A named human, with the role and the organisation they hold it with (plan §5.3). */
+export interface Reviewer {
+  name: string;
+  role: string;
+  organisation: string;
+}
+
+/**
+ * Plan §5.3. Four states, and "unreviewed" is a valid, honest one — an
+ * unreviewed emergency number is still shown, at full contrast, because
+ * leaving somebody with nothing at the bad moment is worse by a wide margin.
+ *
+ * "reviewed-no-number" is a real signed answer: a guide saying "there is no
+ * number here that works" is information, and it is shown in their words.
+ */
+export type EmergencyReview =
+  | { state: "unreviewed" }
+  | {
+      state: "reviewed";
+      /** Plan §5.2's second date: the day a human who works there confirmed it. */
+      confirmedOn: string;
+      reviewers: Reviewer[];
+      /** "Nepal, Khumbu, spring trekking season" is a scope. "Nepal" is not. */
+      scope: string;
+    }
+  | {
+      state: "reviewed-no-number";
+      confirmedOn: string;
+      reviewers: Reviewer[];
+      scope: string;
+      /** Their own words for why there is no number worth holding. */
+      reason: string;
+    };
+
+/**
+ * A country's numbers, held once (plan §5.1). There is exactly one Italian 112
+ * in this codebase and it is here; mountain records keep only their own lines.
+ */
+export interface CountryEmergency {
+  /** ISO 3166-1 alpha-2, upper case. */
+  code: string;
+  name: string;
+  numbers: EmergencyNumber[];
+  review: EmergencyReview;
+  /**
+   * Shown above the numbers, never on one row (plan §5.9): a warning that sits
+   * on the second number is read under a call button built from the first.
+   */
+  warnings?: string[];
+  /** What ICEFALL does not hold for this country, named rather than left silent. */
+  gaps?: string[];
+}
+
+/**
+ * A country ICEFALL deliberately holds nothing for, with the reason (plan §5.1).
+ * Not a silent hole, and never a guess.
+ */
+export interface EmergencyGap {
+  code: string;
+  name: string;
+  reason: string;
+  /** The mountains this gap actually bites on. */
+  mountainIds: string[];
 }
 
 /** A named body that turns up. Never "the authorities", never "local rescue". */
@@ -177,9 +265,26 @@ export interface Disagreement {
 
 export interface MountainRescueRecord {
   mountainId: string;
+  /** ISO 3166-1 alpha-2 of the country whose numbers this mountain answers to. */
+  countryCode: string;
+  /**
+   * The other countries the mountain stands in. Mont Blanc and the Matterhorn
+   * have a border across them, and which service you get depends on which side
+   * of the ridge you are on — which their caveats say in words.
+   */
+  alsoCountryCodes?: string[];
   /** The one-line answer to "who comes". */
   summary: string;
+  /**
+   * The country's numbers followed by this mountain's own lines. Built at
+   * module load from `countryCode` + `localNumbers`, so the same national
+   * number cannot drift between two mountains.
+   */
   numbers: EmergencyNumber[];
+  /** This mountain's own lines only — the Chamonix landline, the ranger station, the radio. */
+  localNumbers?: EmergencyNumber[];
+  /** Shown above the numbers: "there is no phone signal on this mountain" (plan §5.9). */
+  warnings?: string[];
   responders: Responder[];
   helicopter: HelicopterRecord;
   charging: ChargingAnswer;
@@ -208,8 +313,22 @@ export interface MountainRescueRecord {
 /* -------------------------------------------------------------------------- */
 
 const READ = "2026-09-11";
+/** The Swiss re-sourcing of plan §5.9 was read on this day, not the file's first day. */
+const READ_CH = "2026-09-15";
 
 const S = {
+  fcdoSwitzerlandHealth: {
+    label: "FCDO travel advice — Switzerland, health",
+    url: "https://www.gov.uk/foreign-travel-advice/switzerland/health",
+    kind: "issuer",
+    checked: READ_CH,
+  },
+  fcdoSwitzerlandSafety: {
+    label: "FCDO travel advice — Switzerland, safety and security",
+    url: "https://www.gov.uk/foreign-travel-advice/switzerland/safety-and-security",
+    kind: "issuer",
+    checked: READ_CH,
+  },
   ec112: {
     label: "European Commission — 112, the EU's emergency phone number",
     url: "https://digital-strategy.ec.europa.eu/en/policies/112",
@@ -368,9 +487,11 @@ const S = {
     checked: READ,
   },
   zermattNumbers: {
+    // Secondary, not issuer: a tourist board is not the body that answers a
+    // national police line (plan §5.9).
     label: "Zermatt Tourism — emergency numbers",
     url: "https://zermatt.swiss/en/info/emergency-numbers",
-    kind: "issuer",
+    kind: "secondary",
     checked: READ,
   },
   zermattAirZermatt: {
@@ -453,20 +574,22 @@ const S = {
  * written out per country instead of assumed.
  */
 const NEPAL_NUMBERS: EmergencyNumber[] = [
-  { number: "100", label: "Police", source: S.fcdoNepal },
+  { number: "100", label: "Police", contact: "dial", source: S.fcdoNepal },
   {
     number: "1144",
     label: "Tourist police",
+    contact: "dial",
     note: "The FCDO singles this line out for good English.",
     source: S.fcdoNepal,
   },
   {
     number: "102",
     label: "Ambulance",
+    contact: "dial",
     note: "The FCDO adds that there is no central public ambulance service — some private providers operate in the main cities, and in an emergency you are told to call the nearest hospital.",
     source: S.fcdoNepal,
   },
-  { number: "101", label: "Fire", source: S.fcdoNepal },
+  { number: "101", label: "Fire", contact: "dial", source: S.fcdoNepal },
 ];
 
 const NEPAL_INSURANCE: InsuranceAnswer = {
@@ -480,10 +603,11 @@ const PAKISTAN_NUMBERS: EmergencyNumber[] = [
   {
     number: "1122",
     label: "Ambulance and fire",
+    contact: "dial",
     note: "The FCDO warns that in remote or mountainous regions an ambulance could take over an hour, because of poor road access and limited availability.",
     source: S.fcdoPakistan,
   },
-  { number: "15", label: "Police", source: S.fcdoPakistan },
+  { number: "15", label: "Police", contact: "dial", source: S.fcdoPakistan },
 ];
 
 /** Both Karakoram peaks are served by the same aviation arrangement. */
@@ -525,19 +649,51 @@ const PAKISTAN_INSURANCE: InsuranceAnswer = {
   source: S.askari,
 };
 
+/**
+ * Plan §5.9, first fix: these are national numbers and three of them were cited
+ * to a Valais tourist board — on the Eiger, 100 km away in another canton. 144
+ * and 112 now come off the FCDO's own Switzerland page, read 15 September 2026.
+ * 117 has no national page ICEFALL has read, and says so on the row rather than
+ * being dropped: a police number nobody has re-sourced still works.
+ */
 const SWISS_NUMBERS: EmergencyNumber[] = [
   {
     number: "1414",
     label: "Rega — Swiss Air-Rescue",
+    contact: "dial",
     note: "Rega's operations centre coordinates missions around the clock. This is the number for medical assistance by air in Switzerland.",
     source: S.rega1414,
   },
-  { number: "144", label: "Emergency switchboard", source: S.zermattNumbers },
-  { number: "117", label: "Police", source: S.zermattNumbers },
+  {
+    number: "144",
+    label: "Ambulance",
+    contact: "dial",
+    note: "The FCDO's advice for Switzerland is to dial 112 or 144 and ask for an ambulance.",
+    source: S.fcdoSwitzerlandHealth,
+    readOn: READ_CH,
+  },
+  {
+    number: "117",
+    label: "Police",
+    contact: "dial",
+    note: "ICEFALL has not found a Swiss federal page for this number that it could read. It is held on a cantonal tourist board's page.",
+    source: S.zermattNumbers,
+  },
   {
     number: "112",
-    label: "International emergency number",
-    source: S.zermattNumbers,
+    label: "European emergency number",
+    contact: "dial",
+    note: "The FCDO gives 112 alongside 144 for Switzerland.",
+    source: S.fcdoSwitzerlandHealth,
+    readOn: READ_CH,
+  },
+  {
+    number: "118",
+    label: "Fire",
+    contact: "dial",
+    note: "The FCDO gives 118 as the fire department, in its wildfire advice.",
+    source: S.fcdoSwitzerlandSafety,
+    readOn: READ_CH,
   },
 ];
 
@@ -556,16 +712,197 @@ const SWISS_INSURANCE: InsuranceAnswer = {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Countries — where the numbers live (plan §5.1)                              */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * NOTHING IN HERE HAS BEEN CONFIRMED BY ANYBODY WHO WORKS IN THESE COUNTRIES.
+ * Every review below reads `unreviewed`, which is a valid state and is said out
+ * loud on the screen. The numbers are still shown, at full contrast, and the
+ * call button never greys: a two-year-old number that is very probably right
+ * beats a disabled button (plan §5.4).
+ */
+
+const TANZANIA_NUMBERS: EmergencyNumber[] = [
+  {
+    number: "112",
+    label: "Ambulance, fire, police",
+    contact: "dial",
+    note: "The FCDO's number for Tanzania.",
+    source: S.fcdoTanzania,
+  },
+  {
+    number: "114",
+    label: "Ambulance (alternative)",
+    contact: "dial",
+    source: S.trekMedicsTz,
+  },
+];
+
+const FRANCE_NUMBERS: EmergencyNumber[] = [
+  {
+    number: "112",
+    label: "European emergency number",
+    contact: "dial",
+    note: "Free from fixed and mobile phones everywhere in the EU, and routed to the nearest appropriate service. This is the number the French authorities ask people to use.",
+    source: S.ec112,
+  },
+];
+
+const ITALY_NUMBERS: EmergencyNumber[] = [
+  {
+    number: "112",
+    label: "European emergency number",
+    contact: "dial",
+    note: "Free everywhere in the EU, from fixed and mobile phones, routed to the appropriate local service.",
+    source: S.ec112,
+  },
+];
+
+const USA_NUMBERS: EmergencyNumber[] = [
+  {
+    number: "911",
+    label: "Ambulance, fire, police",
+    contact: "dial",
+    source: S.fcdoUsa,
+  },
+];
+
+const ARGENTINA_NUMBERS: EmergencyNumber[] = [
+  { number: "911", label: "Police", contact: "dial", source: S.fcdoArgentina },
+  { number: "107", label: "Ambulance", contact: "dial", source: S.fcdoArgentina },
+  { number: "100", label: "Fire", contact: "dial", source: S.fcdoArgentina },
+];
+
+const GREECE_NUMBERS: EmergencyNumber[] = [
+  {
+    number: "112",
+    label: "Ambulance, fire, police",
+    contact: "dial",
+    note: "The single European emergency number, free from any phone, and the number Greek rescues on Olympus are raised on. The FCDO adds that calling 999 from a UK mobile in Greece transfers automatically to the Greek emergency services.",
+    source: S.fcdoGreece,
+  },
+];
+
+const SLOVENIA_NUMBERS: EmergencyNumber[] = [
+  {
+    number: "112",
+    label: "Emergency services, including mountain rescue",
+    contact: "dial",
+    note: "GRZS gives 112 as the number to call for a mountain accident in Slovenia.",
+    source: S.grzs,
+  },
+];
+
+const MOROCCO_NUMBERS: EmergencyNumber[] = [
+  {
+    number: "177",
+    label: "Gendarmerie Royale",
+    contact: "dial",
+    note: "The gendarmerie covers rural Morocco, which is where Toubkal is. The FCDO lists it separately from the urban police number.",
+    source: S.fcdoMorocco,
+  },
+  { number: "150", label: "Ambulance and fire", contact: "dial", source: S.fcdoMorocco },
+  { number: "190", label: "Police", contact: "dial", source: S.fcdoMorocco },
+];
+
+const UNREVIEWED: EmergencyReview = { state: "unreviewed" };
+
+export const COUNTRY_EMERGENCY: CountryEmergency[] = [
+  { code: "NP", name: "Nepal", numbers: NEPAL_NUMBERS, review: UNREVIEWED },
+  { code: "PK", name: "Pakistan", numbers: PAKISTAN_NUMBERS, review: UNREVIEWED },
+  {
+    code: "TZ",
+    name: "Tanzania",
+    numbers: TANZANIA_NUMBERS,
+    review: UNREVIEWED,
+    // Plan §5.9: this sat on the SECOND number. The first becomes the call button.
+    warnings: [
+      "Trek Medics records 112 and 114 as Tanzania's numbers and adds that outside Dar es Salaam they do not consistently work, and that no region of Tanzania has a government-provided emergency ambulance service.",
+    ],
+  },
+  {
+    code: "FR",
+    name: "France",
+    numbers: FRANCE_NUMBERS,
+    review: UNREVIEWED,
+    gaps: [
+      "France's text-message emergency line, 114, is not in ICEFALL's data: no source has been read for it.",
+    ],
+  },
+  {
+    code: "IT",
+    name: "Italy",
+    numbers: ITALY_NUMBERS,
+    review: UNREVIEWED,
+    gaps: [
+      "ICEFALL holds no Italian number behind 112 — no national mountain-rescue line, and nothing for the Soccorso Alpino services by region.",
+    ],
+  },
+  {
+    code: "CH",
+    name: "Switzerland",
+    numbers: SWISS_NUMBERS,
+    review: UNREVIEWED,
+    gaps: [
+      "117 is still held on a cantonal tourist board's page. ICEFALL has not read a Swiss federal listing of it.",
+    ],
+  },
+  { code: "US", name: "United States", numbers: USA_NUMBERS, review: UNREVIEWED },
+  { code: "AR", name: "Argentina", numbers: ARGENTINA_NUMBERS, review: UNREVIEWED },
+  {
+    code: "GR",
+    name: "Greece",
+    numbers: GREECE_NUMBERS,
+    review: UNREVIEWED,
+    gaps: [
+      "ICEFALL holds no direct number for the Hellenic Fire Service or for EMAK, the units that actually go up Olympus.",
+    ],
+  },
+  { code: "SI", name: "Slovenia", numbers: SLOVENIA_NUMBERS, review: UNREVIEWED },
+  { code: "MA", name: "Morocco", numbers: MOROCCO_NUMBERS, review: UNREVIEWED },
+];
+
+/** Countries ICEFALL deliberately holds nothing for, with the reason (plan §5.1). */
+export const EMERGENCY_GAPS: EmergencyGap[] = [
+  {
+    code: "CN",
+    name: "China",
+    reason:
+      "Three mountains in this app have a border across them and ICEFALL holds nothing for the northern side. Access there runs through a permitted operator, and in practice the number that reaches anybody is the operator's own. ICEFALL will not put a guessed number on the biggest button on the screen — ask your operator for theirs, and ask before you are on the mountain.",
+    mountainIds: ["everest", "k2", "broad-peak"],
+  },
+];
+
+const COUNTRY_BY_CODE = new Map(COUNTRY_EMERGENCY.map((c) => [c.code, c]));
+const GAP_BY_CODE = new Map(EMERGENCY_GAPS.map((g) => [g.code, g]));
+
+/** The country's numbers, or null where ICEFALL holds none. Never guessed. */
+export function countryEmergency(code: string | null | undefined): CountryEmergency | null {
+  if (!code) return null;
+  return COUNTRY_BY_CODE.get(code.toUpperCase()) ?? null;
+}
+
+/** The named reason a country is empty, where there is one. */
+export function emergencyGap(code: string | null | undefined): EmergencyGap | null {
+  if (!code) return null;
+  return GAP_BY_CODE.get(code.toUpperCase()) ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
 /* The records                                                                 */
 /* -------------------------------------------------------------------------- */
 
-const RECORDS: MountainRescueRecord[] = [
+/** A record as written below: its numbers are assembled from the country. */
+type MountainRescueInput = Omit<MountainRescueRecord, "numbers">;
+
+const RAW_RECORDS: MountainRescueInput[] = [
   /* -------------------------------------------------------------- Everest */
   {
     mountainId: "everest",
+    countryCode: "NP",
     summary:
       "Your own expedition agency is legally responsible for rescuing you. Above roughly 6,400 m no helicopter is coming as a matter of routine.",
-    numbers: NEPAL_NUMBERS,
     responders: [
       {
         name: "Your trekking or expedition agency",
@@ -617,9 +954,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* ------------------------------------------------------------ Annapurna */
   {
     mountainId: "annapurna",
+    countryCode: "NP",
     summary:
       "The same private-helicopter, agency-responsible system as Everest, with the HRA's Manang aid post at 3,550 m as the nearest doctor.",
-    numbers: NEPAL_NUMBERS,
     responders: [
       {
         name: "Your trekking or expedition agency",
@@ -662,9 +999,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* ------------------------------------------------------------------- K2 */
   {
     mountainId: "k2",
+    countryCode: "PK",
     summary:
       "The Pakistan Army flies the helicopters, Askari Aviation coordinates them, and Askari says outright that rescue is not guaranteed.",
-    numbers: PAKISTAN_NUMBERS,
     responders: [
       {
         name: "Pakistan Army Aviation",
@@ -695,9 +1032,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* ----------------------------------------------------------- Broad Peak */
   {
     mountainId: "broad-peak",
+    countryCode: "PK",
     summary:
       "Same Baltoro, same arrangement as K2: Pakistan Army helicopters, coordinated by Askari Aviation, not guaranteed.",
-    numbers: PAKISTAN_NUMBERS,
     responders: [
       {
         name: "Pakistan Army Aviation",
@@ -727,22 +1064,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* ---------------------------------------------------------- Kilimanjaro */
   {
     mountainId: "kilimanjaro",
+    countryCode: "TZ",
     summary:
       "The park's own team carries you down on a stretcher. A helicopter, if one comes at all, meets you well below the summit.",
-    numbers: [
-      {
-        number: "112",
-        label: "Ambulance, fire, police",
-        note: "The FCDO's number for Tanzania.",
-        source: S.fcdoTanzania,
-      },
-      {
-        number: "114",
-        label: "Ambulance (alternative)",
-        note: "Trek Medics records 112 and 114 as the numbers, and adds that outside Dar es Salaam they do not consistently work, and that there are no government-provided emergency ambulance services in any region of Tanzania.",
-        source: S.trekMedicsTz,
-      },
-    ],
     responders: [
       {
         name: "Kilimanjaro National Park (KINAPA) rescue team",
@@ -827,18 +1151,17 @@ const RECORDS: MountainRescueRecord[] = [
   /* ----------------------------------------------------------- Mont Blanc */
   {
     mountainId: "mont-blanc",
+    countryCode: "FR",
+    alsoCountryCodes: ["IT"],
     summary:
       "On the French side, gendarmes of the PGHM, by helicopter, and the state pays. Over the Italian border a different service and a different bill.",
-    numbers: [
-      {
-        number: "112",
-        label: "European emergency number",
-        note: "Free from fixed and mobile phones everywhere in the EU, and routed to the nearest appropriate service. This is the number the French authorities ask people to use.",
-        source: S.ec112,
-      },
+    localNumbers: [
       {
         number: "+33 4 50 53 16 89",
         label: "PGHM Chamonix, direct",
+        contact: "dial",
+        // Plan §5.9: the spaces make a malformed tel: link, so the link form is stored.
+        dial: "+33450531689",
         note: "Answered around the clock, seven days a week.",
         source: S.pghm,
       },
@@ -876,9 +1199,10 @@ const RECORDS: MountainRescueRecord[] = [
   /* ----------------------------------------------------------- Matterhorn */
   {
     mountainId: "matterhorn",
+    countryCode: "CH",
+    alsoCountryCodes: ["IT"],
     summary:
       "Air Zermatt, out of Zermatt, coordinated through Rega on 1414 — and somebody is billed afterwards.",
-    numbers: SWISS_NUMBERS,
     responders: [
       {
         name: "Air Zermatt",
@@ -912,9 +1236,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* ---------------------------------------------------------------- Eiger */
   {
     mountainId: "eiger",
+    countryCode: "CH",
     summary:
       "Rega's helicopter and mountain rescuers from Alpine Rettung Schweiz — winched onto the face, not landed on it.",
-    numbers: SWISS_NUMBERS,
     responders: [
       {
         name: "Rega (Swiss Air-Rescue)",
@@ -947,16 +1271,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* -------------------------------------------------------- Gran Paradiso */
   {
     mountainId: "gran-paradiso",
+    countryCode: "IT",
     summary:
       "Valle d'Aosta's alpine rescue on 112. Free when you genuinely needed it, billed when the region decides you did not.",
-    numbers: [
-      {
-        number: "112",
-        label: "European emergency number",
-        note: "Free everywhere in the EU, from fixed and mobile phones, routed to the appropriate local service.",
-        source: S.ec112,
-      },
-    ],
     responders: [
       {
         name: "Soccorso Alpino Valdostano",
@@ -985,18 +1302,19 @@ const RECORDS: MountainRescueRecord[] = [
   /* --------------------------------------------------------------- Denali */
   {
     mountainId: "denali",
+    countryCode: "US",
     summary:
       "The park's own mountaineering rangers, and volunteer patrols camped high on the mountain — the closest thing in this list to a rescue service already up there with you.",
-    numbers: [
-      {
-        number: "911",
-        label: "Ambulance, fire, police",
-        note: "The number across the United States. There is no mobile coverage on most of the mountain, so in practice a rescue is raised by satellite messenger or radio.",
-        source: S.fcdoUsa,
-      },
+    // Plan §5.9: a coverage warning has to sit above the numbers, not on one row.
+    warnings: [
+      "There is no mobile coverage on most of the mountain, so in practice a rescue is raised by satellite messenger or radio.",
+    ],
+    localNumbers: [
       {
         number: "+1 907 733 2231",
         label: "Walter Harper Talkeetna Ranger Station",
+        contact: "dial",
+        dial: "+19077332231",
         note: "The NPS mountaineering staff who run the climbing programme and the rescues.",
         source: S.npsMountaineering,
       },
@@ -1051,16 +1369,23 @@ const RECORDS: MountainRescueRecord[] = [
   /* ------------------------------------------------------------ Aconcagua */
   {
     mountainId: "aconcagua",
+    countryCode: "AR",
     summary:
       "Park rangers, a police rescue patrol living at 5,450 m, and a helicopter that cannot come higher than they are.",
-    numbers: [
-      { number: "911", label: "Police", source: S.fcdoArgentina },
-      { number: "107", label: "Ambulance", source: S.fcdoArgentina },
-      { number: "100", label: "Fire", source: S.fcdoArgentina },
+    /*
+     * Plan §5.9: this sentence sat on the radio row, below three national
+     * numbers, the first of which becomes the big call button. On the record it
+     * is read before any of them.
+     */
+    warnings: [
+      "There is no phone signal on this mountain. The UIAA describes the rescue patrol as working by radio from Nido de Cóndores.",
+    ],
+    localNumbers: [
       {
         number: "VHF 142.800",
         label: "Aconcagua rescue patrol, by radio",
-        note: "There is no phone signal on the mountain. The UIAA gives this as the frequency the patrol works on from Nido de Cóndores.",
+        contact: "radio",
+        note: "The UIAA gives this as the frequency the patrol works on from Nido de Cóndores.",
         source: S.uiaaAconcagua,
       },
     ],
@@ -1126,16 +1451,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* --------------------------------------------------------- Mount Olympus */
   {
     mountainId: "mount-olympus",
+    countryCode: "GR",
     summary:
       "The fire service out of Litochoro, with EMAK's specialist units, volunteers, and helicopters from the joint rescue centre.",
-    numbers: [
-      {
-        number: "112",
-        label: "Ambulance, fire, police",
-        note: "The single European emergency number, free from any phone, and the number Greek rescues on Olympus are raised on. The FCDO adds that calling 999 from a UK mobile in Greece transfers automatically to the Greek emergency services.",
-        source: S.fcdoGreece,
-      },
-    ],
     responders: [
       {
         name: "Hellenic Fire Service, Litochoro",
@@ -1169,16 +1487,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* -------------------------------------------------------------- Triglav */
   {
     mountainId: "triglav",
+    countryCode: "SI",
     summary:
       "Volunteer mountain rescuers on 112, in a country where the state pays for the helicopter and nobody sends you a bill.",
-    numbers: [
-      {
-        number: "112",
-        label: "Emergency services, including mountain rescue",
-        note: "GRZS gives 112 as the number to call for a mountain accident in Slovenia.",
-        source: S.grzs,
-      },
-    ],
     responders: [
       {
         name: "Gorska reševalna zveza Slovenije (GRZS)",
@@ -1207,18 +1518,9 @@ const RECORDS: MountainRescueRecord[] = [
   /* -------------------------------------------------------------- Toubkal */
   {
     mountainId: "toubkal",
+    countryCode: "MA",
     summary:
       "The Gendarmerie Royale on 177 — and for the serious incidents on Toubkal, the Royal Armed Forces.",
-    numbers: [
-      {
-        number: "177",
-        label: "Gendarmerie Royale",
-        note: "The gendarmerie covers rural Morocco, which is where Toubkal is. The FCDO lists it separately from the urban police number.",
-        source: S.fcdoMorocco,
-      },
-      { number: "150", label: "Ambulance and fire", source: S.fcdoMorocco },
-      { number: "190", label: "Police", source: S.fcdoMorocco },
-    ],
     responders: [
       {
         name: "Gendarmerie Royale",
@@ -1249,6 +1551,20 @@ const RECORDS: MountainRescueRecord[] = [
     ],
   },
 ];
+
+/**
+ * The country's numbers first, then this mountain's own lines (plan §5.1). The
+ * national numbers are never written on a mountain record, so the Italian 112
+ * on Gran Paradiso and the one on the Matterhorn's south side cannot drift
+ * apart: there is one of them, in COUNTRY_EMERGENCY, and both read it.
+ */
+export const RECORDS: MountainRescueRecord[] = RAW_RECORDS.map((r) => ({
+  ...r,
+  numbers: [
+    ...(countryEmergency(r.countryCode)?.numbers ?? []),
+    ...(r.localNumbers ?? []),
+  ],
+}));
 
 /* -------------------------------------------------------------------------- */
 /* Lookup and derived answers                                                  */

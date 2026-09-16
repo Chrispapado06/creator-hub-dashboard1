@@ -22,7 +22,7 @@ import { SESSION_INTENTS, intentById, planFor, type IntentId } from "@/coach/ses
 import { SectionLabel } from "@/components/ui/primitives";
 import { ACTIVITY_TYPES, activityById } from "@/tracking/activities";
 import type { ActivityTypeId } from "@/tracking/types";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import {
   MAP_STYLE_DETAIL,
   MAP_STYLE_LABEL,
@@ -31,6 +31,7 @@ import {
   savedMapStyle,
   type MapStyleId,
 } from "@/components/map/icefallStyle";
+import { startHikeInMountainMode } from "@/mountain/start";
 import { useSettings } from "@/settings/store";
 import { fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -270,10 +271,9 @@ function ActivitySettings({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
-  const { goals } = useApp();
   const { settings, patch } = useSettings();
   const activity = useMemo(() => activityById(discipline.activity), [discipline.activity]);
-  const objective = goals.find((g) => g.status === "active");
+  const objective = usePrimaryGoal();
 
   const [goalOpen, setGoalOpen] = useState(false);
   /*
@@ -633,6 +633,25 @@ function ActivitySettings({
           Start {discipline.label}
           <Play size={15} strokeWidth={2.2} fill="currentColor" />
         </button>
+
+        {/* THE SAME RECORDING, IN MOUNTAIN MODE (brief M3). Not a different
+            activity and not a different track: it starts the identical
+            recording and puts the app in Mountain mode, so leaving the tracker
+            lands on the Now screen instead of the full app. 64 px tall,
+            because it is meant to be hit in gloves. */}
+        <button
+          type="button"
+          onClick={() => {
+            startHikeInMountainMode();
+            navigate(`/activity/live/${activity.id}?go=1`);
+          }}
+          className="mt-2.5 flex min-h-16 w-full items-center justify-center rounded-[12px] border border-hairline-strong px-5 text-[13.5px] text-snow transition-colors hover:border-azure/45"
+        >
+          Start in Mountain mode
+        </button>
+        <p className="mt-2 text-center text-[11.5px] leading-relaxed text-mist">
+          Big text, SOS on every screen, turnaround alarm. Works with no signal.
+        </p>
       </div>
 
       {editing && (

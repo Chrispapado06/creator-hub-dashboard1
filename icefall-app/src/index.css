@@ -4,6 +4,58 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
+   SELF-HOSTED TYPEFACES (Mountain mode plan §6.1, §10.2).
+
+   `index.html` used to link fonts.googleapis.com before any app code ran,
+   which is a request the safety screens cannot control and the offline
+   e2e suite had to carry as a named exception (`e2e/helpers.ts`). These four
+   files ARE the app now — precached by the service worker like any other
+   asset — so the very first launch with no signal renders the real
+   typefaces instead of the fallback stack, and no outside host is asked
+   for anything before the app draws.
+
+   LATIN SUBSET ONLY, matching `<html lang="en">` and every string in this
+   app. Google also serves cyrillic/greek/vietnamese/latin-ext blocks for
+   both families; those are not fetched here and are not needed for English
+   copy. Source: Google Fonts (Inter Tight v9, Instrument Serif v5, OFL),
+   fetched 2026-09-15 and never modified. Total 123 KB — the plan's own
+   storage budget (§7.1) estimated 0.12 MB for this line.
+
+   Inter Tight ships as a VARIABLE font — one file spans the whole 100–900
+   weight range per style — so two files (italic, normal) cover everything
+   `--font-sans` is used at. Instrument Serif is not variable; its italic and
+   normal cuts are two more files. Four files, two families, matching the
+   two `--font-*` tokens below. */
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-tight-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-tight-italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/instrument-serif-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/instrument-serif-italic.woff2") format("woff2");
+}
+
+/* ---------------------------------------------------------------------------
    ICEFALL DESIGN SYSTEM
    A single cinematic dark theme. Colours MUST be oklch (house rule).
 
@@ -203,7 +255,14 @@
 
   /* Layout */
   --shell-max: 430px;
-  --tabbar-h: 52px;
+  /*
+   * 52px -> 60px, owner's flight note 2026-09-15: "make it slightly bigger" —
+   * a taller row and, since every tab `Link` already stretches to fill this
+   * row (`h-full` inside `flex-1`), bigger tap targets on all five slots and
+   * the centre Start control at the same time, without touching each one by
+   * hand.
+   */
+  --tabbar-h: 60px;
   /*
    * HOW FAR UP FROM THE BOTTOM ANYTHING FLOATING MUST START.
    *
@@ -214,11 +273,12 @@
    * of them ended up UNDER the pill — the Social composer's + sat directly on
    * top of the Social tab.
    *
-   * = row (52) + the pill's own vertical padding (2) + the lift (30). The
-   * safe-area inset is added by each call site, because only the call site
-   * knows whether it is already inside a container that cleared it.
+   * = row (60, was 52 — see --tabbar-h above) + the pill's own vertical
+   * padding (2) + the lift (30). The safe-area inset is added by each call
+   * site, because only the call site knows whether it is already inside a
+   * container that cleared it.
    */
-  --tabbar-clearance: 84px;
+  --tabbar-clearance: 92px;
 }
 
 @theme inline {

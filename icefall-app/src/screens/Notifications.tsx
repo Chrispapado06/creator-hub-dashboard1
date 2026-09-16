@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Heart, MessageCircle, UserPlus } from "lucide-react";
+import { ChevronRight, CornerDownRight, Heart, MessageCircle, UserPlus } from "lucide-react";
 
 import { Avatar, Disclaimer, SectionLabel } from "@/components/ui/primitives";
 import { VerificationMark } from "@/components/ui/VerificationMark";
@@ -95,6 +95,7 @@ const SOCIAL_ICON: Record<SocialNoticeKind, typeof UserPlus> = {
   follow: UserPlus,
   like: Heart,
   comment: MessageCircle,
+  reply: CornerDownRight,
 };
 
 /**
@@ -111,6 +112,18 @@ const SOCIAL_ICON: Record<SocialNoticeKind, typeof UserPlus> = {
  * the difference between a working demo and a broken one: the sample rows mint
  * ids like `op-1` and `oa-ilse`, which no route can resolve, so every row on
  * the shared preview link was a dead tap until this was added.
+ *
+ * A COMMENT OR REPLY CARRIES `?comment=<id>` — Instagram's shape, named
+ * directly by the owner's own ruling: "make it work like instagram where you
+ * see who replied… on what story… cleaner navigation". The tap has to land on
+ * the exact row, not merely the post it is on, or the reader is handed a
+ * possibly-long thread to hunt through for the one line they came here for.
+ * `ServerThread` in `components/social/Comments.tsx` reads this same query
+ * param to scroll the row into view — this is the promise, that is the other
+ * half of it. `n.commentId` is the row's own id either way: for a "comment"
+ * notice that is the comment itself; for a "reply" it is the reply, which is
+ * the thing the reader is actually being told about, never the parent it
+ * answered.
  */
 function destinationFor(n: SocialNotice): string | null {
   if (n.kind === "follow") {
@@ -120,13 +133,17 @@ function destinationFor(n: SocialNotice): string | null {
   }
   if (n.post && postIdKind(n.post.id) === "unknown") return null;
   /*
-   * A like or a comment opens the post it is on. If the post did not come back
-   * — deleted between the two reads, or hidden by its own policy — the row is
-   * still true and still shown, it simply does not pretend to have somewhere to
-   * go. It is not redirected to the actor's profile: that would be a different
-   * destination wearing this one's label.
+   * A like, a comment or a reply opens the post it is on. If the post did not
+   * come back — deleted between the two reads, or hidden by its own policy —
+   * the row is still true and still shown, it simply does not pretend to have
+   * somewhere to go. It is not redirected to the actor's profile: that would
+   * be a different destination wearing this one's label.
    */
-  return n.post ? `/social/post/${encodeURIComponent(n.post.id)}` : null;
+  if (!n.post) return null;
+  const base = `/social/post/${encodeURIComponent(n.post.id)}`;
+  return n.commentId
+    ? `${base}?comment=${encodeURIComponent(n.commentId)}`
+    : base;
 }
 
 /**
@@ -145,19 +162,21 @@ function verbFor(n: SocialNotice): string {
     const line = n.post?.title;
     return line !== undefined && line.trim().length > 0 ? `liked “${line}”` : "liked your post";
   }
+  if (n.kind === "reply") return "replied to your comment:";
   return "commented:";
 }
 
 /**
- * The quoted block under the sentence, on a comment row only.
+ * The quoted block under the sentence, on a comment or reply row only.
  *
- * A comment row shows THE COMMENT — their words are the thing you came to read,
- * and the post is one tap away. A like row has already put the post's opening
- * line in its sentence, so it adds nothing here: two grey paragraphs in one row
- * is a wall, and the reader has to work out which voice is which.
+ * A comment or reply row shows THE WORDS — their reply is the thing you came
+ * to read, and the post is one tap away. A like row has already put the
+ * post's opening line in its sentence, so it adds nothing here: two grey
+ * paragraphs in one row is a wall, and the reader has to work out which voice
+ * is which.
  */
 function quotedFor(n: SocialNotice): string | undefined {
-  if (n.kind !== "comment") return undefined;
+  if (n.kind !== "comment" && n.kind !== "reply") return undefined;
   return n.body !== undefined && n.body.trim().length > 0 ? n.body : undefined;
 }
 
@@ -186,15 +205,22 @@ function FollowPill({
   profileId,
   name,
   myId,
+  followBack = false,
 }: {
   profileId: string;
   /** Whose pill this is. The accessible name, so thirty-five of these on one
       screen are not thirty-five buttons all called "Follow". */
   name: string;
   myId: string | null;
+  /** True only on the row of somebody who just followed YOU — the label then
+      answers "follow back?" rather than a plain "Follow", which on that row
+      reads as if you'd never met. A suggestion row (nobody has followed you
+      yet) keeps the plain "Follow". Owner, 2026-09-15. */
+  followBack?: boolean;
 }) {
   const follows = useFollow(DEMO ? null : profileId, myId);
   const [demoFollowing, setDemoFollowing] = useState(false);
+  const notFollowingLabel = followBack ? "Follow back" : "Follow";
 
   const base =
     "shrink-0 self-center rounded-pill px-3.5 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50";
@@ -216,7 +242,7 @@ function FollowPill({
             : "bg-azure text-obsidian hover:bg-azure-bright",
         )}
       >
-        {demoFollowing ? "Following" : "Follow"}
+        {demoFollowing ? "Following" : notFollowingLabel}
       </button>
     );
   }
@@ -229,7 +255,7 @@ function FollowPill({
       <button
         type="button"
         disabled={follows.busy}
-        aria-label={following ? `Unfollow ${name}` : `Follow ${name}`}
+        aria-label={following ? `Unfollow ${name}` : `${notFollowingLabel} ${name}`}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -242,7 +268,7 @@ function FollowPill({
             : "bg-azure text-obsidian hover:bg-azure-bright",
         )}
       >
-        {follows.busy ? "Saving…" : following ? "Following" : "Follow"}
+        {follows.busy ? "Saving…" : following ? "Following" : notFollowingLabel}
       </button>
 
       {/*
@@ -266,7 +292,7 @@ function FollowPill({
 /**
  * The row, as a sentence.
  *
- *   <avatar> Name<mark> started following you        2d ago   [Follow]
+ *   <avatar> Name<mark> started following you        2d ago   [Follow back]
  *   <avatar> Name<mark> liked “the col was already…”  4h ago
  *   <avatar> Name<mark> commented:                   just now
  *                       "which side did you drop into?"
@@ -366,7 +392,7 @@ function SocialRow({ notice, myId }: { notice: SocialNotice; myId: string | null
      answering a question the row did not ask. */
   const pill =
     notice.kind === "follow" ? (
-      <FollowPill profileId={notice.actor.id} name={notice.actor.name} myId={myId} />
+      <FollowPill profileId={notice.actor.id} name={notice.actor.name} myId={myId} followBack />
     ) : null;
 
   if (to === null) {
@@ -734,7 +760,7 @@ export default function Notifications() {
         {loading && social.notices.length === 0 && (
           <Rise>
             <p className="py-3 text-[13px] leading-relaxed text-mist-dim">
-              Checking for follows and comments…
+              Checking for follows, comments and replies…
             </p>
           </Rise>
         )}
@@ -745,7 +771,7 @@ export default function Notifications() {
           <Rise>
             <div className="py-3">
               <p className="text-[13px] leading-relaxed text-mist">
-                Nothing yet. Nobody has followed you or left a comment.
+                Nothing yet. Nobody has followed you, left a comment, or replied to one of yours.
               </p>
               {/*
                 LIKES GET THEIR OWN SENTENCE, and it is not "nobody liked".

@@ -278,7 +278,14 @@ export default function GuideProfile() {
             scrim="vertical"
           />
 
-          <div className="absolute inset-x-0 top-0 flex items-center gap-2 p-4">
+          {/* PAYS THE NOTCH ITSELF, now that this route is on the full-screen
+              list (chrome.tsx: FULL_SCREEN_ROUTES) — there is no Explore
+              header left above it to clear the inset, the same fix already
+              made for the trail page's own floating discs. */}
+          <div
+            className="absolute inset-x-0 top-0 flex items-center gap-2 px-4 pb-4"
+            style={{ paddingTop: "calc(1rem + env(safe-area-inset-top, 0px))" }}
+          >
             <Link
               to="/explore/guides"
               aria-label="Back to guides"
@@ -496,6 +503,10 @@ export default function GuideProfile() {
 function GuideMissing() {
   return (
     <Screen>
+      {/* This route is on the full-screen list (no Explore header above it
+          any more), so this is the one element left to clear the notch —
+          same reasoning as the hero back-row above. */}
+      <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
       <ScreenHeader title="Guide" />
       <Stagger>
         <Rise className="pt-4">

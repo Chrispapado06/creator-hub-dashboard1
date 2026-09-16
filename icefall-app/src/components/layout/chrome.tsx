@@ -98,6 +98,32 @@ const FULL_SCREEN_ROUTES = [
    * send button passes straight over Social.
    */
   "/coach/chat",
+  /*
+   * THE OTHER "OPEN ONE THING" PAGES REACHABLE FROM THE EXPLORE HUB. Owner,
+   * 15 Sep 2026, on the hub: "only would make it how you open trails page
+   * with the others where navigation bar dissapears when you click on a
+   * specific page and it doesnt show you other pages to select from there,
+   * only the one you selected." Trail and trek already had this. These four
+   * are the same kind of page — a single guide, a single company, a single
+   * trip, a single named route — reached the same way, from a list: opened
+   * to read, not to browse from. Each one already draws its own full-bleed
+   * hero, its own back control and (guide and trip) its own
+   * `TABBAR_STICKY_BOTTOM` footer, so nothing else had to be built for them
+   * to belong on this list — they were just never added.
+   */
+  "/explore/guides/:id",
+  "/explore/route/:id",
+  "/operator/:id",
+  "/operator/:id/trip/:tripId",
+  /*
+   * THE THREE TREKS REDESIGN DRAFTS (App.tsx, DEV/DEMO only). Each draws its
+   * own back control the same way `/explore/trek/:id` does, so it needs the
+   * same exemption from the tab bar and top bar — see the comment above the
+   * lazy imports in App.tsx. Delete alongside the routes once one is picked.
+   */
+  "/dev/treks-redesign-a/:id",
+  "/dev/treks-redesign-b/:id",
+  "/dev/treks-redesign-c/:id",
 ] as const;
 
 /** True on a page that carries no bottom navigation and reserves no room for it. */
@@ -130,7 +156,11 @@ export function useDetailBack(fallback: string): () => void {
   const navigate = useNavigate();
   const { key } = useLocation();
   return useCallback(() => {
-    if (key === "default") navigate(fallback, { replace: true });
+    /* A cold open that REDIRECTED here (e.g. a peak link resolving to its
+       curated mountain) gets a fresh key but is still the first entry — React
+       Router keeps that position as `idx` in history.state. */
+    const idx = (window.history.state as { idx?: number } | null)?.idx;
+    if (key === "default" || idx === 0) navigate(fallback, { replace: true });
     else navigate(-1);
   }, [key, navigate, fallback]);
 }

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
-import { Loader2, Plus, Check, ChevronDown, Heart } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Loader2, Plus, Check, ChevronDown } from "lucide-react";
 import { SegmentedTabs } from "@/components/layout/chrome";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { FEED_FILTERS, type FeedFilter } from "@/social/community";
@@ -111,6 +111,7 @@ const tabFor = (sub: Sub): Sub => sub;
 
 export default function Social() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const raw = params.get("tab");
   const sub: Sub = isSub(raw) ? raw : "community";
   const feedRaw = params.get("feed");
@@ -147,9 +148,15 @@ export default function Social() {
           `/explore/social`. Social is its own destination now, so the button
           moved here with it: same contract, one owner.
 
-          It sets the params rather than navigating to a literal URL, so the
-          button cannot be left pointing at a path this screen no longer lives
-          at — which is exactly how it would have been lost in this move.
+          ON THE GROUPS TAB IT NAVIGATES, SINCE SLICE S7. It used to set
+          `?tab=groups&create=1` and let the Groups tab open a form it held
+          inline. The form is its own screen now — `/social/groups/new` — so the
+          button goes there directly rather than through a param the tab has to
+          read and then redirect on. The param still works, for links already in
+          the wild; it is no longer how this button talks to that tab.
+
+          The Feed's + still sets a param, because the post composer really is
+          part of that tab and has no route of its own.
 
           ── IT IS ON THE GROUPS TAB ONLY, and here is the reasoning ───────────
           `Community` — the Feed tab, and only that tab — portals a large azure
@@ -172,21 +179,38 @@ export default function Social() {
               that reaches it is on screen at all times.
             · On the Groups tab the + is the ONLY + on screen, sitting directly
               above the list it adds to — so a bare glyph there is unambiguous.
-            · Every "Start a group" control elsewhere in the app deep-links to
-              `?tab=groups&create=1`, which opens the form directly without
+            · Every "Start a group" control elsewhere in the app links to
+              `/social/groups/new`, which opens the form directly without
               needing this button at all.
           Do not make it unconditional again without dealing with the Feed's +.
         */}
         {/*
           THE INSTAGRAM ROW — the owner's reference for Social, 2026-09-07:
           "+" on the left, the feed's name in the middle with a chevron that
-          opens the feed choices, the heart on the right.
+          opens the feed choices, a heart on the right that opened
+          notifications.
 
-          Each of the three does something real: + creates a post on the Feed
-          tab and a group on the Groups tab (the only two things this screen
-          can create); the middle is the feed filter that used to be a row of
-          chips; the heart opens notifications. Nothing is drawn for a tab
-          that has nothing to create.
+          THE HEART IS GONE, removed 2026-09-13 because the reason it existed
+          stopped holding: on Instagram this row is the ONLY top
+          bar the screen has, so the heart is the one door to notifications.
+          In ICEFALL it never was — `AppTopBar` already draws a bell on every
+          screen with the bottom navigation, Social included, and that bell
+          already carries the real unseen count (`useSocialNotices`) and opens
+          this exact route. So the heart sat directly under the bell, same
+          icon language, same destination, same aria-label ("Notifications")
+          — a second door a hand's width from the first rather than a second
+          thing to do. Copying a reference literally is not the same as
+          organising a screen around it; this is that screen with the copy
+          reconciled against what ICEFALL already had.
+          IT IS NOT REPLACED WITH ANYTHING THAT ALSO OPENS NOTIFICATIONS. The
+          right slot below is an inert spacer, sized to match the left slot's
+          10-11 so the middle label stays centred — the same technique this
+          row already uses for a tab with nothing to create.
+
+          What remains does something real: + creates a post on the Feed tab
+          and a group on the Groups tab (the only two things this screen can
+          create); the middle is the feed filter that used to be a row of
+          chips. Nothing is drawn for a tab that has nothing to create.
         */}
         <div className="flex h-12 items-center justify-between">
           {sub === "community" || sub === "groups" ? (
@@ -195,7 +219,7 @@ export default function Social() {
               aria-label={sub === "groups" ? "Create a group" : "Create a post"}
               onClick={() =>
                 sub === "groups"
-                  ? setParams({ tab: "groups", create: "1" })
+                  ? navigate("/social/groups/new")
                   : setParams((prev) => {
                       const next = new URLSearchParams(prev);
                       next.set("create", "1");
@@ -231,13 +255,10 @@ export default function Social() {
             </p>
           )}
 
-          <Link
-            to="/notifications"
-            aria-label="Notifications"
-            className="-mr-2 grid h-10 w-10 place-items-center rounded-full text-snow transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60"
-          >
-            <Heart size={24} strokeWidth={1.6} aria-hidden="true" />
-          </Link>
+          {/* Balances the `+`/spacer on the left so the label above stays
+              centred, now that nothing real is drawn on the right — see the
+              comment above. */}
+          <span className="w-10" aria-hidden />
         </div>
         <SegmentedTabs
           tabs={SUBS}

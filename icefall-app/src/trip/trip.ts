@@ -159,6 +159,19 @@ export interface Trip {
    * schedule states that it has no peak elevation rather than deriving one.
    */
   peakElevationM: number | null;
+  /**
+   * The curated mountain id (`data/mock/mountains.ts`), copied at creation for
+   * the same reason as the elevation: the SOS screen's numbers must not change
+   * under an athlete because a goal was edited at home. Optional because trips
+   * written before it existed have none; Mountain mode then falls back to the
+   * trip's goal.
+   */
+  mountainId?: string | null;
+  /**
+   * ISO 3166-1 alpha-2 destination country, when the athlete set one. Never
+   * derived from a position (plan §5.6). Nothing sets it yet.
+   */
+  countryCode?: string | null;
   startDate: string;
   endDate: string;
   createdAt: string;
@@ -363,6 +376,8 @@ export function startTrip(input: {
   goalId: string | null;
   peakName: string | null;
   peakElevationM: number | null;
+  mountainId?: string | null;
+  countryCode?: string | null;
   startDate: string;
   endDate: string;
 }): Trip | { error: string } {
@@ -378,6 +393,8 @@ export function startTrip(input: {
       typeof input.peakElevationM === "number" && Number.isFinite(input.peakElevationM)
         ? input.peakElevationM
         : null,
+    mountainId: input.mountainId ?? null,
+    countryCode: input.countryCode ?? null,
     startDate: input.startDate,
     endDate: input.endDate,
     createdAt: new Date().toISOString(),

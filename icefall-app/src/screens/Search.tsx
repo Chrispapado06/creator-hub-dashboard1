@@ -807,7 +807,7 @@ function HitRow({ hit }: { hit: SearchHit }) {
       leading={hit.kind === "person" ? <Avatar name={hit.title} size={36} /> : undefined}
       title={hit.title}
       detail={hit.subtitle}
-      /* The row's own disclosure — "Placeholder group" — beside the title
+      /* The row's own disclosure — "Example" — beside the title
          rather than in the detail line, because the detail line truncates and a
          disclosure an ellipsis can eat is not a disclosure.
 
@@ -841,7 +841,7 @@ function Row({
   icon: typeof Compass;
   title: string;
   detail?: string;
-  /** A disclosure chip — Demo, Sample, Placeholder group. Rendered beside the
+  /** A disclosure chip — Demo, Sample, Example. Rendered beside the
       title, never after the detail, so truncation can only ever eat the
       geography, not the disclosure. */
   badge?: React.ReactNode;

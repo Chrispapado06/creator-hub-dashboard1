@@ -212,13 +212,35 @@ function importsOf(file: string): string[] {
   return [...specs];
 }
 
+/**
+ * Only what survives compilation: `import type` and `export type` statements are
+ * erased, so a type borrowed from a module that fetches is not a network path.
+ */
+function runtimeImportsOf(file: string): string[] {
+  const raw = readSrc(file)
+    .replace(/\bimport\s+type\s+[^;]*?\bfrom\s*["'][^"']+["'];?/g, "")
+    .replace(/\bexport\s+type\s+[^;]*?\bfrom\s*["'][^"']+["'];?/g, "");
+  const specs = new Set<string>();
+  const patterns = [
+    /\bimport\s+[^;'"]*?\bfrom\s*["']([^"']+)["']/g,
+    /\bimport\s*["']([^"']+)["']/g,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /\bexport\s+[^;'"]*?\bfrom\s*["']([^"']+)["']/g,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(raw)) !== null) specs.add(m[1]);
+  }
+  return [...specs];
+}
+
 interface Closure {
   files: string[];
   bare: Set<string>;
   edges: Map<string, string[]>;
 }
 
-function closureFrom(roots: string[]): Closure {
+function closureFrom(roots: string[], importer: (file: string) => string[] = importsOf): Closure {
   const seen = new Set<string>();
   const bare = new Set<string>();
   const edges = new Map<string, string[]>();
@@ -229,7 +251,7 @@ function closureFrom(roots: string[]): Closure {
     if (seen.has(file)) continue;
     seen.add(file);
 
-    const specs = importsOf(file);
+    const specs = importer(file);
     const local: string[] = [];
     for (const spec of specs) {
       const resolved = resolveSpecifier(spec, file);
@@ -385,6 +407,9 @@ function run() {
    * this list and being asked why.
    */
   const ALLOWED_DIRECT = [
+    /* "Start today" (brief M3). It writes the trip record and enters Mountain
+       mode; its own imports are pinned by test 8. */
+    "@/mountain/StartTodayRow",
     "@/components/layout/chrome",
     "@/components/settings/kit",
     "@/components/ui/primitives",
@@ -397,6 +422,13 @@ function run() {
     "@/trip/schedule",
     "@/trip/timeline",
     "@/trip/trip",
+    /* Which objective a new trip belongs to (2026-09-16): `pickTripGoal` is a
+       pure function with no imports, and the debrief store is device-local
+       (localStorage + react) — neither reaches a network. */
+    "@/objectives/primaryGoal",
+    "@/objectives/objectiveDebrief",
+    /* Today's date as a string, re-read on focus — react only, no network. */
+    "@/lib/useDayKey",
   ];
 
   const screenDirect = new Set<string>();
@@ -467,6 +499,193 @@ function run() {
     "nor does the trip screen reuse the demo banner",
     !stripCommentsAndStrings(readSrc("src/screens/trip/TripMode.tsx")).includes("OfflineBanner"),
   );
+
+  /* ---------------------------------------------------------------------- */
+  testCase("7 — Mountain mode's logic reaches nothing that can call out (plan §8.1 #1)");
+
+  /*
+   * THE STRICT TIER, EXTENDED. Every pure Mountain-mode module — the turnaround
+   * store, the last position, daylight, the SOS numbers and formats, the body
+   * log, the boot decision — joins the safety core's absolute claim. Walked on
+   * the RUNTIME graph: a type borrowed from a module that fetches is erased by
+   * the compiler and is not a path.
+   */
+  const MOUNTAIN_CORE_ROOTS = [
+    "src/mountain/alarmModel.ts",
+    "src/mountain/alarmSound.ts",
+    "src/mountain/battery.ts",
+    "src/mountain/body.ts",
+    "src/mountain/boot.ts",
+    "src/mountain/daylight.ts",
+    "src/mountain/emergencyInfo.ts",
+    "src/mountain/exampleTrip.ts",
+    "src/mountain/format.ts",
+    "src/mountain/mapModel.ts",
+    "src/mountain/mode.ts",
+    "src/mountain/nowModel.ts",
+    "src/mountain/paths.ts",
+    "src/mountain/position.ts",
+    "src/mountain/sos.ts",
+    "src/mountain/tripModel.ts",
+    "src/mountain/tripTabModel.ts",
+    "src/mountain/turnaround.ts",
+    "src/tracking/wakeLock.ts",
+  ];
+  const mcore = closureFrom(MOUNTAIN_CORE_ROOTS, runtimeImportsOf);
+  console.log(`  \x1b[2m${mcore.files.length} files in the closure: ${mcore.files.join(", ")}\x1b[0m`);
+  const mcoreOffences: string[] = [];
+  for (const file of mcore.files) {
+    const code = stripCommentsAndStrings(readSrc(file));
+    for (const [label, re] of NETWORK_PATTERNS) if (re.test(code)) mcoreOffences.push(`${file} → ${label}`);
+  }
+  check("no file Mountain mode's logic runs can reach the network", mcoreOffences.length === 0, mcoreOffences.join("; "));
+  const mcoreBare = [...mcore.bare].filter((s) => !isBundled(s) && !s.startsWith("node:"));
+  check("... and it imports no package outside the bundled set", mcoreBare.length === 0, mcoreBare.join(", "));
+  check(
+    "the emergency numbers still import nothing",
+    (stripCommentsAndStrings(readSrc("src/data/mountainRescue.ts")).match(/\bimport\b/g) ?? []).length === 0,
+  );
+  check(
+    "the planted-import guard works: tracking/follow reaches services/trails",
+    closureFrom(["src/tracking/follow.ts"], runtimeImportsOf).files.includes("src/services/trails.ts"),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  testCase("8 — Mountain mode's screens: no call or paywall of their own, allowlisted imports (§8.1 #2)");
+
+  /*
+   * THE HONEST PART AGAIN. The screens read the trip through `useMountainTrip`,
+   * which reads `state/AppState`, and that reaches Supabase through settings —
+   * already loaded by the app shell before any screen draws. So, as for the trip
+   * screens: nothing on them calls out, nothing sits behind a subscription, and
+   * the set of shared modules they may touch is pinned.
+   */
+  const MOUNTAIN_SCREENS = [
+    "src/mountain/BodyTab.tsx",
+    "src/mountain/EmergencyInfoSection.tsx",
+    "src/mountain/MapTab.tsx",
+    "src/mountain/MountainIndex.tsx",
+    "src/mountain/StartTodayRow.tsx",
+    "src/mountain/start.ts",
+    "src/mountain/MountainShell.tsx",
+    "src/mountain/NowTab.tsx",
+    "src/mountain/SafetyLayer.tsx",
+    "src/mountain/SosScreen.tsx",
+    "src/mountain/TripTab.tsx",
+    "src/mountain/EndTripScreen.tsx",
+    "src/mountain/TurnaroundAlarm.tsx",
+    "src/mountain/TurnaroundSetter.tsx",
+    "src/mountain/offer.tsx",
+    "src/mountain/trip.ts",
+  ];
+  const MOUNTAIN_ALLOWED_SHARED = [
+    /* The signal pill reads it; test 10 keeps it out of the logic tier. */
+    "@/connection/reachability",
+    "@/coach/safety",
+    "@/data/mock/mountains",
+    "@/data/mountainCamps",
+    "@/data/mountainRescue",
+    /* The on-device stores. None of them reaches a network: the queue holds
+       items until a sender exists, and everything else is this phone's. */
+    "@/device/savedHere",
+    "@/device/storageStatus",
+    "@/device/syncQueue",
+    "@/lib/utils",
+    /* The build's date, and the update that waits rather than taking over. */
+    "@/offline/appAge",
+    "@/offline/appUpdate",
+    "@/offline/appUpdateModel",
+    "@/offline/offline",
+    "@/services/acclimatisation",
+    "@/services/checklist",
+    /* Battery saver, screen theme and large text — this phone's settings. */
+    "@/settings/useMountainSettings",
+    "@/state/AppState",
+    "@/tracking/activeSession",
+    /* Ending a trip stops the recording and saves it, and the trip pack reads
+       the plan. Neither sends anything. */
+    "@/tracking/finalize",
+    "@/tracking/training",
+    "@/tracking/types",
+    "@/tracking/useRecorder",
+    "@/tracking/wakeLock",
+    "@/trip/connectivity",
+    "@/trip/lakeLouise",
+    "@/trip/trip",
+    /* `start.ts` reads an objective's date as the LOCAL day, the same way the
+       app-wide objective rule does (2026-09-16). Pure; no imports. */
+    "@/objectives/primaryGoal",
+  ];
+  for (const f of MOUNTAIN_SCREENS) {
+    const code = stripCommentsAndStrings(readSrc(f));
+    const net = NETWORK_PATTERNS.filter(([, re]) => re.test(code)).map(([l]) => l);
+    const pay = PAYWALL_PATTERNS.filter(([, re]) => re.test(code)).map(([l]) => l);
+    check(`${f} makes no network call and has no entitlement gate`, net.length + pay.length === 0, [...net, ...pay].join(", "));
+  }
+  const mountainShared = new Set<string>();
+  for (const f of MOUNTAIN_SCREENS) {
+    for (const s of importsOf(f)) if (!s.startsWith(".") && !isBundled(s)) mountainShared.add(s);
+  }
+  const unlisted = [...mountainShared].filter((s) => !MOUNTAIN_ALLOWED_SHARED.includes(s));
+  check("the Mountain mode screens import only allowlisted shared modules", unlisted.length === 0, unlisted.join(", "));
+  const sosClosure = closureFrom(["src/mountain/SosScreen.tsx"], runtimeImportsOf);
+  const sosComponents = sosClosure.files.filter((f) => f.startsWith("src/components/"));
+  check("the SOS screen pulls in none of the app's shared components", sosComponents.length === 0, sosComponents.join(", "));
+
+  /* ---------------------------------------------------------------------- */
+  testCase("9 — The alarm is above every route; SOS opens from the main file (§2.3, §2.8, §8.1 #5)");
+
+  const appCode = stripCommentsAndStrings(app);
+  check(
+    "<SafetyLayer /> is rendered before <Routes>, not inside a layout",
+    appCode.includes("<SafetyLayer />") && appCode.indexOf("<SafetyLayer />") < appCode.indexOf("<Routes>"),
+  );
+  check(
+    "SafetyLayer renders the alarm on every path (no early return)",
+    !/return\s+null/.test(stripCommentsAndStrings(readSrc("src/mountain/SafetyLayer.tsx"))),
+  );
+  for (const [name, spec] of [
+    ["SOS", "@/mountain/SosScreen"],
+    ["Now", "@/mountain/NowTab"],
+    ["Body", "@/mountain/BodyTab"],
+    ["the shell", "@/mountain/MountainShell"],
+  ] as const) {
+    check(
+      `${name} is imported directly, never lazily`,
+      new RegExp(`import\\s+\\w+\\s+from\\s+"${spec}"`).test(app) && !app.includes(`import("${spec}")`),
+    );
+  }
+  check("/mountain/sos is routed", app.includes('path="sos"') && app.includes('path="/mountain"'));
+  check(
+    "the symptom check is declared outside AppShell",
+    app.indexOf('path="/trip/check"') >= 0 && app.indexOf('path="/trip/check"') < app.indexOf("<Route element={<AppShell />}>"),
+  );
+  check(
+    "the live tracker draws the SOS button",
+    /<SosButton\b/.test(stripCommentsAndStrings(readSrc("src/screens/tracker/LiveTracker.tsx"))),
+  );
+  check(
+    "the Mountain mode shell draws the SOS button",
+    /<SosButton\s*\/>/.test(stripCommentsAndStrings(readSrc("src/mountain/MountainShell.tsx"))),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  testCase("10 — The reachability check stays off the safety path (§2.7)");
+
+  const REACH_FILE = "src/connection/reachability.ts";
+  check("connectivity.ts imports only react", importsOf("src/trip/connectivity.ts").join(",") === "react");
+  check("the safety core never reaches the reachability check", !closureFrom(CORE_ROOTS).files.includes(REACH_FILE));
+  check(
+    "Mountain mode's logic never reaches it either",
+    !closureFrom(MOUNTAIN_CORE_ROOTS, runtimeImportsOf).files.includes(REACH_FILE),
+  );
+  const reachCode = stripCommentsAndStrings(readSrc(REACH_FILE));
+  check(
+    "it trusts 'no network' before any request",
+    reachCode.includes("navigator.onLine === false"),
+  );
+  check("it never polls on an interval", !/\bsetInterval\s*\(/.test(reachCode));
+  check("its probe file ships with the app", readSrc("public/reachability.txt").trim() === "ICEFALL-OK-1");
 
   /* ---------------------------------------------------------------------- */
 

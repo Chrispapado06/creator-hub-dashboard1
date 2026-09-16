@@ -2,13 +2,19 @@
  * ⚠ READ THIS BEFORE EDITING. Four things in this file will cost you hours if
  * you meet them by surprise. Written 2026-09-02 by the session handing it over.
  *
- * 1. LINES ~152-409 ARE A 1:1 MOCKUP BUILD, NOT A DESIGN TO IMPROVE.
- *    The owner sent four mockup images and said "do it 1:1 even with same people
- *    images". Groups(), GroupsBody(), DemoGroupCard() and GroupCoverCard() are
- *    the result — the Discover/My Groups pills, the cover cards, the
- *    "1,240 members · 156 posts" line, the disabled Join. EXTEND these. Do not
- *    rebuild them. The owner checked the last build against the image and will
- *    check this one.
+ * 1. THE 2026-09-02 MOCKUP BUILD HAS BEEN SUPERSEDED BY A NEW ONE, 2026-09-11.
+ *    The old note here said "1:1 mockup build, not a design to improve —
+ *    Groups(), GroupsBody(), DemoGroupCard() and GroupCoverCard()". The owner
+ *    has since sent a NEW drawing of this screen and said "heres how I want the
+ *    group page to look like", and it is a different screen: a search field
+ *    with a filter control, "Discover groups" over filter chips and a
+ *    HORIZONTAL RAIL of tall photographic cards, "My groups" as a vertical list
+ *    of thumbnail rows, and a "+ Create group" pill under all of it. The four
+ *    functions named above are gone and the ones below replace them. What the
+ *    old note was protecting still holds and has been carried over: the owner's
+ *    padlock for a private group. The NEW drawing is a competitor's screenshot —
+ *    LAYOUT ONLY. Its light ground, its purple and its typography are not
+ *    ICEFALL's and none of them shipped.
  *
  * 2. `GroupsBody` IS CALLED AS A FUNCTION (line ~190), NOT RENDERED AS AN
  *    ELEMENT, AND THAT IS DELIBERATE. `Stagger` animates through framer-motion
@@ -19,19 +25,22 @@
  *    exactly this, twice in this file and once in People.tsx. GroupsBody holds
  *    no hooks, so calling it is safe.
  *
- * 3. EVERYTHING FROM ~LINE 411 DOWN IS PARKED, NOT ROT. `PeopleAndGroupsMerged`
- *    and its ~1000 lines (MountainsSection, InterestedList, MountainPicker,
- *    YourGroupsSection, Filters) are the old merged partner-finder: "add a
- *    mountain, see who else wants it". It WORKS. It is unreferenced because it
+ * 3. THE SECOND HALF OF THIS FILE IS PARKED, NOT ROT. `PeopleAndGroupsMerged`
+ *    and its sections (MountainsSection, MountainRow, InterestedList,
+ *    CatalogueList, MountainPicker) are the old merged partner-finder: "add a
+ *    mountain, see who else wants it". It WORKS. (`YourGroupsSection`,
+ *    `Filters`, `Facet` and `Pill` were part of it and are NOT parked — they
+ *    drew groups saved on one phone, which nobody can start any more. The note
+ *    where they stood says why.) It is unreferenced because it
  *    awaits an owner decision that was asked for and never answered. DO NOT
  *    DELETE IT AS DEAD CODE. `noUnusedLocals` is false in this repo, so nothing
  *    here is compiler-caught — unreferenced has to be judged by eye, and this
  *    one has already been judged.
  *
- * 4. `DemoGroupCard` IS DEMO-GATED WITH `import.meta.env` SPELLED OUT INLINE so
- *    the bundler folds the branch away. Routing that flag through a shared
- *    constant defeats the fold and ships the invented "1,240 members" groups to
- *    production, beside real ones. Do not tidy it.
+ * 4. THERE ARE NO DEMO CARDS ANY MORE (structure plan §3.3, S2). Demo builds
+ *    show the labelled examples from `groups/demo/exampleSource.ts`, which is
+ *    gated at its own definition; every other build shows real groups only, and
+ *    "No groups yet." when there are none.
  *
  * ── 5. THE OWNER'S MOCKUP, AND THE ONE PLACE WE MUST DIVERGE FROM IT ────────
  * The drawing is at ~/Downloads/icefall-sessions/mockups/social-pages-owner-mockup.webp
@@ -54,11 +63,9 @@
  * ONE place the build will not match the image. The owner has been told, in
  * those terms, rather than left to find a renamed button.
  *
- * COUNTS ARE ABBREVIATED IN THE DRAWING — "1.2K members · 156 posts". The demo
- * card shipped "1,240 members"; theirs is better and `abbreviate` now does it.
- * ONLY on the demo cards: a real `member_count` is a measured number and is
- * printed whole, because rounding a group of 1,204 people to "1.2K" where the
- * exact figure is knowable is an invention for no reason.
+ * COUNTS ARE ABBREVIATED IN THE DRAWING and are printed whole here: a real
+ * `member_count` is a measured number, and rounding it where the exact figure
+ * is knowable is an invention for no reason.
  *
  * THERE IS NO CREATE-GROUP AFFORDANCE ANYWHERE IN THE PANEL — pills, four cards,
  * tab bar, nothing else. The owner asked for "if you create a group you have
@@ -92,13 +99,14 @@
  * The owner: "If you create a group you have option to be public or private
  * accept". Three things landed here, and each one has a trap worth knowing.
  *
- * A. THE CREATE FLOW IS INLINE, REACHED BY A FLOATING +. There is no route for
- *    it and there must not be: `/social/groups/new` is `CreateExpedition`,
- *    which makes an `Expedition` — a plan held on THIS DEVICE. A group with a
- *    privacy setting is a row in `public.groups` on the server. Two different
- *    records, and pointing the new flow at the old route would have quietly
- *    made one of them the other. The + mirrors the Feed's compose button,
- *    portalled into the phone shell exactly as `Community.tsx` does it.
+ * A. THE CREATE FLOW HAS ITS OWN ROUTE AGAIN, AS OF SLICE S7 (16 Sep 2026).
+ *    This note used to say the opposite — "there is no route for it and there
+ *    must not be" — because `/social/groups/new` made an `Expedition`, a plan
+ *    held on THIS DEVICE, and pointing the new flow at the old route would
+ *    have quietly made one record the other. There is only ONE kind of group
+ *    now (structure plan D1), so there is only one form, and that route is it:
+ *    `screens/groups/create/CreateGroupPage.tsx` renders `CreateGroupCard`
+ *    below, full-screen. `?create=1` still arrives and redirects there.
  *
  * B. THE LIST READ CANNOT TELL A PUBLIC GROUP FROM A PRIVATE ONE, so a second,
  *    narrow read does. `useSharedGroups` (network/interest.ts) deliberately
@@ -117,8 +125,10 @@
  *    records the owner's ruling: joining a public group lands you inside it,
  *    because the join was the decision and a second tap is friction. That
  *    depends entirely on `/social/groups/:id`, which `GroupWorkspace` now
- *    dispatches — a LOCAL expedition id renders the planning workspace, a
- *    uuid-shaped one renders the server group's space. Before that dispatch
+ *    dispatches — a uuid-shaped id renders the server group's space, and a
+ *    LOCAL expedition id renders the read-only summary of a group saved on
+ *    this phone, or redirects to the group on the account once it has been
+ *    moved there (structure plan §1.4). Before that dispatch
  *    existed the same navigation answered a real join with "this device holds
  *    no group with that id", so IF THAT DISPATCH EVER GOES, THIS NAVIGATION
  *    GOES WITH IT: reporting the join and staying put is true, and landing
@@ -142,17 +152,34 @@
  * lifted out of Explore on 2026-09-03 and the + travelled with it; the old
  * layout carries no action at all now.
  *
- * IT TALKS TO THIS FILE THROUGH THE URL, not through shared state. The + sets
- * `?tab=groups&create=1` on `/social`; THIS SCREEN must open its create flow
- * when it sees `create=1`, and clear the param when the flow closes so a
- * back-navigation does not reopen it. Nothing is plumbed between the two
- * components, and the flow becomes linkable for free — note that it works on
- * `/social/groups?create=1` and on the legacy `/explore/groups?create=1` too,
- * because the test is the param and not the path — every redirect into Social
- * carries the search string for exactly this reason.
+ * IT GOES STRAIGHT TO `/social/groups/new` SINCE SLICE S7, because the form is
+ * a screen of its own now rather than a piece of state on this one. It used to
+ * set `?tab=groups&create=1` and let this screen open the flow inline. That
+ * param still arrives — from links already in the wild, and from
+ * `/social/groups?create=1` and the legacy `/explore/groups?create=1`, because
+ * every redirect into Social carries the search string — and this screen
+ * REPLACE-redirects it to the form.
  *
  * DO NOT re-add a floating +. It was mine, the owner has replaced it, and a
  * second entry point to the same form is how two of them drift apart.
+ *
+ * ── 8. THERE IS A "+ CREATE GROUP" PILL AT THE FOOT AGAIN, 2026-09-11 ───────
+ * AND IT CONTRADICTS §7 ABOVE, KNOWINGLY. §7 records the owner saying "not
+ * under discover" and the floating + was duly removed. Their new drawing puts
+ * a "+ Create group" pill under the My-groups list, so the instruction and the
+ * drawing disagree and the drawing is the later of the two. Three things make
+ * it a different control from the one they rejected:
+ *   · It is NOT floating. It scrolls with the page and sits at the END of the
+ *     list rather than over it, so it reads as the last item rather than a
+ *     control over the list beneath it.
+ *   · It is not under Discover. It is under everything.
+ *   · It carries a WORD. What the owner objected to was a bare glyph below a
+ *     filter row, which reads as a filter.
+ * IT IS NOT A SECOND FLOW. It is a `Link` to `/social/groups/new`, which is
+ * where the header's + goes and where `?create=1` lands, so the two cannot
+ * drift.
+ * IF THE OWNER RESTATES "not under discover" AFTER SEEING THIS, DELETE THE
+ * PILL AND LEAVE THE HEADER +; the flow survives either way.
  * ========================================================================== */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -166,6 +193,7 @@ import {
   Lock,
   Mountain as MountainIcon,
   Plus,
+  Search,
   SlidersHorizontal,
   UserMinus,
   UserPlus,
@@ -176,37 +204,32 @@ import { Avatar, Button, Card, Disclaimer, SectionLabel } from "@/components/ui/
 import { DateField } from "@/components/ui/DateField";
 import { supabase } from "@/backend/client";
 import { Rise, Screen, Stagger } from "@/components/layout/chrome";
-import { GroupCard } from "@/components/network/GroupCard";
-import { MountainThumb } from "@/components/domain/MountainImage";
+import { MountainThumb, useMountainImage } from "@/components/domain/MountainImage";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtElevation } from "@/lib/format";
 import { MOUNTAINS } from "@/data/mock/mountains";
+import type { Mountain } from "@/types";
 import { SAFETY_REMINDER } from "@/network/privacy";
 import { destinationIdForPeak } from "@/enquiries/send";
-import { DEMO_GROUPS, GROUPS_DEMO_NOTICE, type DemoGroup } from "@/social/demoGroups";
+import { EXAMPLE_GROUPS, EXAMPLE_LABEL, type ExampleGroup } from "@/groups/demo/exampleSource";
+/* The groups saved on this phone, and the tap that moves each one up. */
+import { DeviceGroupsSection } from "@/screens/groups/sections/tab/DeviceGroupsSection";
 import {
-  ACCEPTED_NOT_SEATED,
   MAX_GROUP_NAME,
-  PRIVATE_MEANS_ASK,
+  MAX_GROUP_TOPIC,
   VISIBILITY_EXPLAINED,
   useGroupActions,
   type GroupVisibility,
 } from "@/social/groupSpace";
-import { EXPERIENCE_LABELS, type ExperienceLevel } from "@/network/types";
 import {
-  DATE_FILTER_LABELS,
-  NO_FILTERS,
-  SIZE_FILTER_LABELS,
-  STYLE_FILTER_LABELS,
-  activeFilterCount,
-  anyFilterActive,
-  matchesFilters,
-  todayKey,
-  type DateFilter,
-  type GroupFilters,
-  type SizeFilter,
-  type StyleFilter,
-} from "@/network/groups";
+  aboutForKind,
+  appPeakFor,
+  destinationMatches,
+  useGroupDestinations,
+  type DestinationsState,
+  type GroupDestination,
+} from "@/groups/mountains";
+import { todayKey } from "@/network/groups";
 import {
   INTEREST_VISIBLE_NOTICE,
   SHARED_GROUPS_NOT_LIVE,
@@ -216,12 +239,13 @@ import {
   loadInterestedPeople,
   removeMountainInterest,
   useSharedGroups,
+  type GroupPlace,
   type InterestFailure,
   type InterestedPerson,
   type MountainGroup,
   type SharedGroups,
 } from "@/network/interest";
-import { useApp, usePrimaryGoal } from "@/state/AppState";
+import { usePrimaryGoal } from "@/state/AppState";
 
 /**
  * PEOPLE AND GROUPS — one page.
@@ -275,15 +299,6 @@ import { useApp, usePrimaryGoal } from "@/state/AppState";
  */
 
 /* -------------------------------------------------------------------------- */
-/* Facet options                                                               */
-/* -------------------------------------------------------------------------- */
-
-const DATE_OPTIONS: DateFilter[] = ["any", "open-now", "next-90", "this-year", "passed"];
-const SIZE_OPTIONS: SizeFilter[] = ["any", "pair", "small", "large"];
-const STYLE_OPTIONS: StyleFilter[] = ["any", "guided", "independent", "not-recorded"];
-const EXPERIENCE_OPTIONS: ExperienceLevel[] = ["beginner", "intermediate", "advanced", "expert"];
-
-/* -------------------------------------------------------------------------- */
 /* Page                                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -320,7 +335,7 @@ type Ask = "pending" | "accepted" | "declined";
  * that state offers no join control at all, because it cannot tell which of the
  * two controls would work and the wrong one can only raise.
  */
-type GroupPrivacy =
+export type GroupPrivacy =
   | { status: "loading" }
   /** No client in this build. There are no real groups on screen either. */
   | { status: "no-backend" }
@@ -449,7 +464,7 @@ async function readPrivacy(): Promise<GroupPrivacy> {
  * because of something the reader just did, and a socket held open on a phone
  * that may be on a mountain buys nothing.
  */
-function useGroupPrivacy(): { privacy: GroupPrivacy; reload: () => void } {
+export function useGroupPrivacy(): { privacy: GroupPrivacy; reload: () => void } {
   const [privacy, setPrivacy] = useState<GroupPrivacy>({ status: "loading" });
   const [nonce, setNonce] = useState(0);
 
@@ -467,549 +482,827 @@ function useGroupPrivacy(): { privacy: GroupPrivacy; reload: () => void } {
   return { privacy, reload };
 }
 
+/* -------------------------------------------------------------------------- */
+/* One group, as this screen needs it — example or real, one shape             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHY THERE IS A SEAM HERE AT ALL.
+ *
+ * Two records reach this list — the rows of `public.groups`, and in demo builds
+ * the labelled examples — and both are drawn by the same card. `Entry` is the
+ * narrow shape a CARD can draw, and the two adapters below are the only places
+ * that decide what is knowable. A field that is null here is a field ICEFALL
+ * was not told, and every card reads null the same way: nothing is drawn, and
+ * where the gap matters the reason is.
+ */
+interface Entry {
+  key: string;
+  name: string;
+  /** Where this group opens. */
+  to: string;
+  /** Enough of a peak to resolve a photograph, or null where ICEFALL cannot. */
+  peak: { name: string; elevationM?: number; lat?: number; lon?: number } | null;
+  /** A photograph the record carries itself, which beats resolving one. */
+  cover: string | null;
+  /** The line above the name: which mountain. Null where it cannot be said. */
+  about: string | null;
+  /** Said in place of `about` when the mountain could not be resolved at all. */
+  aboutAbsence: string | null;
+  /** A measured count. Null is UNKNOWN and is never rendered as zero. */
+  members: number | null;
+  /** Only where the server actually said. Null draws no word and no padlock. */
+  visibility: GroupVisibility | null;
+  joined: boolean;
+  /** This reader's own outstanding or decided ask, where one is known. */
+  ask: Ask | null;
+  /** ISO, or "" where the record carries no created date to order by. */
+  createdAt: string;
+  intendedOn: string | null;
+  /** True for a labelled example (demo builds only). Its card says "Example". */
+  example: boolean;
+  /** The peak slug, for matching a group against the reader's own objective. */
+  destinationId: string | null;
+}
+
+/** The peak's own record, by slug — never matched on the group's title. */
+function peakRecord(destinationId: string | null) {
+  if (destinationId === null) return null;
+  return MOUNTAINS.find((m) => m.id === destinationId) ?? null;
+}
+
+/**
+ * The eyebrow over a group's name: WHICH MOUNTAIN, and how high.
+ *
+ * The mockup puts a discipline there — "Sport Climbing". ICEFALL has no
+ * discipline on a group, on either record or in the table, and inventing a
+ * taxonomy to fill a slot is how a screen starts describing groups it has
+ * never been told anything about. So the slot carries what the group really is
+ * about, which is also what a climber scanning this list is looking for.
+ *
+ * SINCE `group_type_and_trip.sql` A GROUP NEED NOT BE A PEAK: `destination_id`
+ * is nullable, `groups_subject_is_coherent` allows a trek as readily as a
+ * mountain, and a group with no destination carries its own `topic` instead.
+ * This function is the mountain case only — the one where this build holds the
+ * record and can say how high it is. `aboutPlace` is the rest.
+ */
+function aboutPeak(m: Mountain): string {
+  return `${m.name} · ${fmtElevation(m.elevationM)} m`;
+}
+
+/**
+ * The same slot for a place the catalogue named but this build cannot draw.
+ *
+ * 41 of the server's mountains are absent from the app, and every trek is —
+ * see `groups/mountains.ts`. Their names still came back with the list, so the
+ * place is named. A TREK SAYS SO: calling a walk a peak is the one thing the
+ * owner's ruling of 16 Sep 2026 forbids. No height, because none was asked for.
+ */
+function aboutPlace(place: GroupPlace): string {
+  return place.kind === "trek" ? `${place.name} · Trek` : place.name;
+}
+
+/**
+ * Said where the place did not come back with the group AT ALL.
+ *
+ * Not "not a mountain this build carries", which was a claim about a peak on a
+ * read that never learnt whether the place was one. This says only what is
+ * true: there is a place and its record is not here.
+ */
+const PLACE_NOT_NAMED = "The place's record did not come back";
+
+/** A real row of `public.groups`, with whatever the second read could add. */
+function entryForGroup(group: MountainGroup, privacy: GroupPrivacy): Entry {
+  const m = peakRecord(group.destinationId);
+  /*
+   * WHAT THE GROUP IS ABOUT, in the order of what is actually known: the peak
+   * this build holds a record of, the catalogue's own name for a place it does
+   * not, the group's own words where there is no place at all, and otherwise
+   * nothing — which is drawn as an absence rather than filled in.
+   */
+  const about = m
+    ? aboutPeak(m)
+    : group.destination
+      ? aboutPlace(group.destination)
+      : group.destinationId === null
+        ? group.topic
+        : null;
+  return {
+    key: group.id,
+    name: group.name,
+    to: `/social/groups/${group.id}`,
+    peak: m
+      ? { name: m.name, elevationM: m.elevationM, lat: m.coords.lat, lon: m.coords.lon }
+      : null,
+    cover: null,
+    /* NOT TITLE-CASED FROM THE SLUG, in any of the branches above. The
+       catalogue's name arrives with the list or it does not; turning
+       `ama-dablam-south` into a name nobody uses would be ICEFALL naming a
+       place for itself. */
+    about,
+    aboutAbsence:
+      about !== null
+        ? null
+        : group.destinationId === null
+          ? "Not about a particular place"
+          : PLACE_NOT_NAMED,
+    members: group.memberCount,
+    visibility: privacy.status === "ready" ? (privacy.visibility.get(group.id) ?? null) : null,
+    joined: group.joinedByMe,
+    ask: privacy.status === "ready" ? (privacy.asks.get(group.id) ?? null) : null,
+    createdAt: group.createdAt,
+    intendedOn: group.intendedOn,
+    example: false,
+    destinationId: group.destinationId,
+  };
+}
+
+/**
+ * A labelled example from `groups/demo/exampleSource.ts` (demo builds only).
+ *
+ * It opens like a real group: `/social/groups/:id` reads an example id through
+ * the same hooks, and every write on it is refused. The card and the row say
+ * "Example", and the name carries the word too.
+ */
+function entryForExample({ group }: ExampleGroup): Entry {
+  const m = peakRecord(group.destinationId);
+  return {
+    key: group.id,
+    name: group.name,
+    to: `/social/groups/${group.id}`,
+    peak: m
+      ? { name: m.name, elevationM: m.elevationM, lat: m.coords.lat, lon: m.coords.lon }
+      : null,
+    cover: null,
+    about: m ? aboutPeak(m) : null,
+    aboutAbsence: m ? null : PLACE_NOT_NAMED,
+    members: group.memberCount,
+    visibility: group.visibility,
+    joined: group.joinedByMe,
+    ask: null,
+    createdAt: group.createdAt,
+    intendedOn: group.intendedOn,
+    example: true,
+    destinationId: group.destinationId,
+  };
+}
+
+/** What a card shows in the member slot, or null where there is nothing true. */
+function memberLine(entry: Entry): string | null {
+  if (entry.members !== null) {
+    return `${entry.members.toLocaleString("en-GB")} ${entry.members === 1 ? "member" : "members"}`;
+  }
+  return null;
+}
+
+/**
+ * "Open", "Private", or nothing at all.
+ *
+ * The mockup writes "Open" and that is the owner's word, so a public group
+ * keeps it — a public group here really is open to anyone signed in, because
+ * `group_members_insert` takes a self-insert into one outright. Where the
+ * visibility column could not be read the slot is EMPTY: "Open" is a claim
+ * about who may get in and an unread setting is not an open door.
+ */
+function doorWord(entry: Entry): string | null {
+  return entry.visibility === "public" ? "Open" : entry.visibility === "private" ? "Private" : null;
+}
+
+/** Does this group match what somebody typed? Name and mountain, nothing else. */
+function matchesQuery(entry: Entry, q: string): boolean {
+  if (q === "") return true;
+  const needle = q.trim().toLowerCase();
+  if (needle === "") return true;
+  return (
+    entry.name.toLowerCase().includes(needle) ||
+    (entry.about ?? "").toLowerCase().includes(needle) ||
+    (entry.peak?.name ?? "").toLowerCase().includes(needle)
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The chips, and which of them can honestly exist                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE MOCKUP DRAWS FOUR CHIPS. TWO OF THEM HAVE NOTHING BEHIND THEM.
+ *
+ *   For you    there IS no interest signal: `seedObjectives()` puts all
+ *              fourteen curated mountains on a new athlete's list, so filtering
+ *              on saved objectives selects everything and the word "personal"
+ *              would be doing no work. What IS real is the ACTIVE OBJECTIVE —
+ *              one mountain, chosen, with a date — so the chip is named after
+ *              it ("For Mont Blanc") and does not render when there is none.
+ *   Popular    the only popularity signal on a group is `member_count`. No post
+ *              count, no join rate, no activity column. So the chip is "Most
+ *              members", which is what it would be sorting by.
+ *   Nearby     DROPPED. A group has no location of any kind — no column on
+ *              `groups`, no field on `MountainGroup` — and the reader's own
+ *              position exists only behind an opt-in that is off by default and
+ *              absent entirely in this build. "Near the peak" is a different
+ *              claim from "near you" and the chip cannot make either.
+ *   New        KEPT, as the order the list is already in and the one every
+ *              other chip returns to. It is not a no-op because it is the state
+ *              a re-sort is undone by — and the row does not render at all
+ *              unless a second chip qualifies beside it (see `chipsFor`).
+ */
+type Chip = "new" | "goal" | "members";
+
+/**
+ * Only the chips that would actually change what is on screen.
+ *
+ * A sort chip over one group, or a filter chip that matches all of them or none
+ * of them, is a control that does nothing — house rule 3 — and the fix is not
+ * to disable it but to leave it out. So each one is tested against the pool it
+ * would act on, and where only "New" survives the whole row goes.
+ */
+function chipsFor(pool: Entry[], goalDestinationId: string | null): Chip[] {
+  const chips: Chip[] = ["new"];
+
+  if (goalDestinationId !== null) {
+    const hit = pool.filter((e) => e.destinationId === goalDestinationId).length;
+    if (hit > 0 && hit < pool.length) chips.push("goal");
+  }
+
+  /*
+   * NOT "the counts differ" — "SORTING BY THEM MOVES SOMETHING". A list already
+   * in descending member order would otherwise get a chip that produced the
+   * identical rail. Measured against the order the list is really in, which is
+   * the only test that catches it.
+   */
+  const asIs = pool.map((e) => e.key);
+  const byMembers = sortByMembers(pool).map((e) => e.key);
+  if (asIs.some((k, i) => byMembers[i] !== k)) chips.push("members");
+
+  return chips.length > 1 ? chips : [];
+}
+
+/**
+ * Most members first.
+ *
+ * A group whose count DID NOT ARRIVE cannot be ranked at all: it goes last, in
+ * the order it already had, rather than being read as nought and ranked bottom
+ * as if it were empty.
+ */
+function sortByMembers(list: Entry[]): Entry[] {
+  return [...list].sort((a, b) => {
+    const an = a.members;
+    const bn = b.members;
+    if (an === null && bn === null) return 0;
+    if (an === null) return 1;
+    if (bn === null) return -1;
+    return bn - an;
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* GROUPS — the owner's mockup, 2026-09-11                                     */
+/* -------------------------------------------------------------------------- */
+
 /**
  * GROUPS.
  *
- * The mockup: two pills, Discover and My Groups, then cards that are a wide
- * cover photo with the group's name across the bottom, a line of counts, and a
- * Join button on the right.
+ * The mockup: a search field with a filter control, "Discover groups" over a
+ * row of chips and a horizontal rail of tall photographic cards, then "My
+ * groups" as a vertical list of thumbnail-name-mountain-count rows, then a
+ * "+ Create group" pill under all of it.
  *
- * ── WHAT THE MOCKUP DRAWS THAT THE ROW CANNOT ANSWER ────────────────────────
- * The drawing reads "1.2K members · 156 posts", and one of those two is real.
+ * ── WHAT THE MOCKUP DRAWS THAT THE DATA CANNOT ANSWER ───────────────────────
+ *   "Sport Climbing"  no group carries a discipline. The mountain goes there.
+ *   "13 Members"      `member_count` is nullable and null means it did not
+ *                     arrive, never zero — a group always has at least its
+ *                     founder. Where it is null the card says so.
+ *   "· Open"          rides on `groups.visibility`, read in a second request.
+ *                     Where that read did not answer, no word is drawn.
+ *   "156 posts"       there is no post count on a group anywhere in this app.
+ *                     Not drawn. A second figure beside a real one borrows its
+ *                     credibility.
+ *   "Nearby"          see `chipsFor`. Dropped outright.
  *
- *   MEMBERS  `MountainGroup.memberCount` is the computed `member_count` on the
- *            row, and it is NULLABLE on purpose — a count that did not arrive
- *            is unknown. Where it is null the card says so rather than
- *            printing 0, which would tell somebody a group is empty when
- *            ICEFALL simply has not been told.
- *   POSTS    there is no post count on a group anywhere in this app, and no
- *            table to derive one from. It is not rendered. A second figure
- *            beside a real one borrows its credibility.
+ * ── THE BUG THIS REBUILD EXISTS TO FIX ──────────────────────────────────────
+ * The previous list rendered every group as a plain <div>. A group you had
+ * already joined could NOT BE OPENED from this screen at all — the only way in
+ * was the navigation that fires straight after a fresh join. "My groups" was a
+ * list you could look at and not enter. Every row and every card is a Link now.
  *
- * The padlock the mockup puts on two cards is now REAL and no longer decorative:
- * `groups.visibility` arrived with 20260902220000, so a lock is drawn where the
- * server said private and nowhere else. Where that column cannot be read the
- * lock is left off and the card offers no join control at all, because a padlock
- * is a claim about who may get in — see `GroupPrivacy` and `GroupCoverCard`.
- *
- * ── THE COVER PHOTO IS THE MOUNTAIN'S OWN ───────────────────────────────────
- * `destinationId` is the peak's slug, so a group for Mont Blanc shows the Mont
- * Blanc photograph this app already holds. Nothing is matched by name or
- * guessed from the group's title — a group called "Denali Push 2026" gets
- * Denali because its row says Denali.
+ * ── WHERE THE JOIN BUTTON WENT ──────────────────────────────────────────────
+ * It is on the group's own page, where `Standing` already resolves all five
+ * membership branches against what the database will actually accept. The
+ * owner's ruling of 2026-09-02 — that joining a public group opens it — is
+ * kept and inverted: you open the group and join from inside it, having seen
+ * the mountain, the date and who is in before deciding. Nothing was lost; a
+ * card that carried "Join" carried a second control the whole card competed
+ * with, and the mockup draws no button on a card.
  */
 export default function Groups() {
-  const [scope, setScope] = useState<"discover" | "mine">("discover");
-  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
+  const [chip, setChip] = useState<Chip>("new");
+  const [filtering, setFiltering] = useState(false);
+  const [door, setDoor] = useState<"any" | "public" | "private">("any");
+  const [dated, setDated] = useState(false);
 
   /*
-   * THE OTHER HALF OF THE HEADER CONTRACT, which the guard block above
-   * describes and which nobody had written. THE HEADER + IS
-   * `screens/social/Social.tsx`'s, not `ExploreLayout`'s — Social left Explore
-   * on 2026-09-03 and the button went with it — and it sets
-   * `?tab=groups&create=1`; this reads it, opens the flow, and CLEARS the param
-   * immediately — with `replace`, so a back-navigation returns to wherever they
-   * were rather than reopening the form they just closed.
+   * `?create=1` IS A REDIRECT NOW, NOT A FLAG — structure plan §1.4, slice S7.
    *
-   * `create=1` ALSO ARRIVES FROM ELSEWHERE, which is the point of doing it
-   * through the URL: the Explore hub's "Start a group" links straight at
-   * `/social?tab=groups&create=1` rather than at a list with no create control
-   * on it, which is what it used to point at.
-   *
-   * Through the URL rather than shared state, exactly as the contract says: the
-   * two components stay ignorant of each other and the flow is linkable for
-   * free.
+   * The create form has its own route, `/social/groups/new`, so this screen no
+   * longer holds a second copy of it behind a piece of state. Links already in
+   * the wild still work: `/social?tab=groups&create=1`, `/social/groups?create=1`
+   * and the legacy `/explore/groups?create=1` all arrive here, because every
+   * redirect into Social carries the search string, and all three land on the
+   * form. REPLACE, so Back returns to whatever the reader was on rather than
+   * bouncing off this screen into the form again.
    */
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const wantsCreate = params.get("create") === "1";
   useEffect(() => {
-    if (params.get("create") !== "1") return;
-    setCreating(true);
-    const next = new URLSearchParams(params);
-    next.delete("create");
-    setParams(next, { replace: true });
-  }, [params, setParams]);
-  const { state, reload } = useSharedGroups();
-  const { privacy, reload: reloadPrivacy } = useGroupPrivacy();
+    if (wantsCreate) navigate("/social/groups/new", { replace: true });
+  }, [wantsCreate, navigate]);
 
   /*
-   * BOTH READS, TOGETHER. A join changes `joined_by_me` on the group row and a
-   * request changes this reader's own ask — one write can move either, and a
-   * card whose two halves disagree is a card that shows "Request to join"
-   * beside "You are in this group".
+   * BOTH READS, AND THEY ARE READ TOGETHER. A group row carries `joined_by_me`
+   * and this second read carries the reader's own ask; a row whose two halves
+   * disagree is a row that says "Open" beside a group it has already said is
+   * closed. Neither is written from this screen any more — joining happens on
+   * the group's own page and creating on `/social/groups/new` — so both are
+   * read once, on mount.
    */
-  const refresh = useCallback(() => {
-    reload();
-    reloadPrivacy();
-  }, [reload, reloadPrivacy]);
+  const { state } = useSharedGroups();
+  const { privacy } = useGroupPrivacy();
+  const goal = usePrimaryGoal();
+
+  /* Every group on offer, in one shape. Examples exist only in demo builds, which
+     have no server, so the two never really share the list. */
+  const pool = useMemo(() => {
+    const real = state.status === "ready" ? state.groups : [];
+    return [
+      ...EXAMPLE_GROUPS.map(entryForExample),
+      ...real.map((g) => entryForGroup(g, privacy)),
+    ];
+  }, [state, privacy]);
+
+  /* A demo build has no server; its examples stand in for the no-server line. */
+  const examplesInstead = EXAMPLE_GROUPS.length > 0 && state.status === "no-backend";
+
+  const goalDestinationId = goal ? (goal.mountainId ?? destinationIdForPeak(goal.name)) : null;
+  const chips = useMemo(() => chipsFor(pool, goalDestinationId), [pool, goalDestinationId]);
+
+  /*
+   * WHICH FACETS THE FILTER CONTROL CAN OFFER, and it offers none unless one of
+   * them would genuinely split the list in two. A facet that matches everything
+   * or nothing is a control that does nothing; where neither survives, the
+   * glyph in the search field is not drawn either, because a filter button over
+   * no filters is the same bug one level up.
+   */
+  const doorFacet =
+    pool.some((e) => e.visibility === "public") && pool.some((e) => e.visibility === "private");
+  const dateFacet = pool.some((e) => e.intendedOn) && pool.some((e) => !e.intendedOn);
+  const anyFacet = doorFacet || dateFacet;
+  const facetsOn = (doorFacet && door !== "any") || (dateFacet && dated);
+
+  /* ---- What Discover shows, after everything the reader has asked for ----- */
+  const discover = useMemo(() => {
+    let list = pool.filter((e) => matchesQuery(e, query));
+    if (doorFacet && door !== "any") list = list.filter((e) => e.visibility === door);
+    if (dateFacet && dated) list = list.filter((e) => e.intendedOn !== null);
+    if (chip === "goal" && goalDestinationId !== null) {
+      list = list.filter((e) => e.destinationId === goalDestinationId);
+    }
+    if (chip === "members") list = sortByMembers(list);
+    return list;
+  }, [pool, query, door, dated, doorFacet, dateFacet, chip, goalDestinationId]);
+
+  /* ---- The groups this reader is actually in ----------------------------- */
+  const mine = useMemo(
+    () => pool.filter((e) => e.joined && matchesQuery(e, query)),
+    [pool, query],
+  );
+
+  /* ---- Creating ---------------------------------------------------------- */
+
+  /*
+   * NOT HERE ANY MORE. The form used to replace this list in place; since S7 it
+   * is `/social/groups/new`, a screen of its own with its own title and its own
+   * way back. `?create=1` above sends anyone holding an old link to it.
+   */
+
+  /* An empty screen for the one frame before the redirect above fires, rather
+     than the whole list appearing and being taken away again. */
+  if (wantsCreate) return <Screen padded={false}>{null}</Screen>;
 
   return (
     <Screen padded={false}>
       <Stagger className="px-5 pb-24 pt-1">
-        {/* ---- Discover / My Groups -------------------------------------- */}
-        <Rise className="flex gap-2.5">
-          {(["discover", "mine"] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setScope(s)}
-              aria-pressed={scope === s}
+        {/* ---- Search, with the filter control inside it ------------------ */}
+        <Rise className="pt-1">
+          <div className="relative">
+            <Search
+              size={15}
+              strokeWidth={1.7}
+              aria-hidden
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mist-dim"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search groups…"
+              aria-label="Search groups by name or mountain"
               className={cn(
-                "h-11 flex-1 rounded-pill border text-[14px] transition-colors",
-                scope === s
-                  ? "border-azure/70 text-azure"
-                  : "border-hairline text-mist hover:border-hairline-strong hover:text-snow",
+                "h-11 w-full rounded-pill border border-hairline bg-graphite pl-10 text-[13.5px] text-snow outline-none placeholder:text-mist-dim focus:border-azure [&::-webkit-search-cancel-button]:hidden",
+                anyFacet ? "pr-12" : "pr-4",
               )}
-            >
-              {s === "discover" ? "Discover" : "My Groups"}
-            </button>
-          ))}
+            />
+            {/* A REAL CONTROL OR NONE AT ALL. Drawn only where there is
+                something to filter by — see `doorFacet` / `dateFacet`. */}
+            {anyFacet && (
+              <button
+                type="button"
+                aria-label={filtering ? "Hide filters" : "Filter groups"}
+                aria-expanded={filtering}
+                onClick={() => setFiltering((v) => !v)}
+                className={cn(
+                  "absolute right-1 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full transition-colors",
+                  filtering || facetsOn ? "text-azure" : "text-mist-dim hover:text-snow",
+                )}
+              >
+                <SlidersHorizontal size={15} strokeWidth={1.7} aria-hidden />
+              </button>
+            )}
+          </div>
         </Rise>
 
-        {/*
-         * CALLED, NOT MOUNTED — and it has to be.
-         *
-         * `Stagger` animates its children through framer-motion variants, and
-         * that only reaches elements that are its OWN children. Rendered as
-         * `<GroupsBody />` the cards became children of GroupsBody instead, the
-         * animate state never arrived, and every card sat at opacity 0: present
-         * in the DOM, invisible on screen — the same failure the People tab hit
-         * with a plain wrapper div. Calling it inlines the returned `Rise`
-         * elements directly into `Stagger`. It holds no hooks, so this is safe.
-         */}
-
-        {/* MOUNTED, not called — unlike `GroupsBody` this one holds hooks (its
-            own draft, its own `useGroupActions`). It is safe because the
-            element inside `Rise` is not what `Stagger` animates: `Rise` is, and
-            `Rise` is still a direct child. The rule is about what sits BETWEEN
-            Stagger and Rise, and nothing does. */}
-        {creating && (
-          <Rise className="pt-4">
-            <CreateGroupCard
-              privacy={privacy}
-              onClose={() => setCreating(false)}
-              onCreated={() => {
-                // The new group is one this person is in, so "My Groups" is
-                // where it now is. Switching is the only way this screen can
-                // show them the thing they just made.
-                setScope("mine");
-                refresh();
-              }}
-            />
+        {anyFacet && filtering && (
+          <Rise className="pt-3">
+            <p className="text-[11px] leading-relaxed text-mist-dim">Filters what Discover shows.</p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {doorFacet &&
+                (["any", "public", "private"] as const).map((d) => (
+                  <FilterChip
+                    key={d}
+                    on={door === d}
+                    onClick={() => setDoor(d)}
+                    label={d === "any" ? "Any door" : d === "public" ? "Open to anyone" : "Approval needed"}
+                  />
+                ))}
+              {dateFacet && (
+                <FilterChip
+                  on={dated}
+                  onClick={() => setDated((v) => !v)}
+                  label="Has a date set"
+                />
+              )}
+            </div>
           </Rise>
         )}
 
-        {GroupsBody({ scope, state, privacy, onChanged: refresh })}
+        {/* ---- Discover --------------------------------------------------- */}
+        <Rise className="pt-8">
+          <SectionLabel>Discover groups</SectionLabel>
+        </Rise>
+
+        {chips.length > 0 && (
+          <Rise className="no-scrollbar -mx-5 mt-3 flex gap-2 overflow-x-auto px-5">
+            {chips.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setChip(c)}
+                aria-pressed={chip === c}
+                className={cn(
+                  "h-11 shrink-0 rounded-pill border px-4 text-[13px] transition-colors",
+                  chip === c
+                    ? "border-azure/70 bg-azure/[0.10] text-azure"
+                    : "border-hairline text-mist hover:border-hairline-strong hover:text-snow",
+                )}
+              >
+                {c === "new"
+                  ? "Newest"
+                  : c === "members"
+                    ? "Most members"
+                    : `For ${goal?.name ?? "your objective"}`}
+              </button>
+            ))}
+          </Rise>
+        )}
+
+        {/* THE RAIL SITS INSIDE A `Rise`, and it has to. `Stagger` propagates
+            its variants to DIRECT CHILDREN ONLY — a wrapper between the two
+            leaves every card at opacity 0, in the DOM, with no error and tsc
+            green. See §2 in the file header; it has cost three sessions. */}
+        {discover.length > 0 ? (
+          <Rise className="no-scrollbar -mx-5 mt-4 flex gap-3 overflow-x-auto px-5 pb-1">
+            {discover.map((e) => (
+              <DiscoverCard key={e.key} entry={e} />
+            ))}
+          </Rise>
+        ) : (
+          /* NO RAIL AT ALL, AND THE REASON IN ITS PLACE. An empty scroller is
+             indistinguishable from one that failed to load. */
+          <Rise className="pt-5">
+            <p className="max-w-[320px] text-[12.5px] leading-relaxed text-mist">
+              {discoverAbsence(state, query, chip, facetsOn, goal?.name ?? null)}
+            </p>
+          </Rise>
+        )}
+
+        {/* ---- My groups -------------------------------------------------- */}
+        <Rise className="pt-10">
+          <SectionLabel>My groups</SectionLabel>
+        </Rise>
+
+        {state.status === "loading" ? (
+          <Rise className="pt-4">
+            <p className="text-[12.5px] text-mist">Looking for the groups you are in…</p>
+          </Rise>
+        ) : state.status !== "ready" && !examplesInstead ? (
+          <Rise className="pt-4">
+            <SharedUnavailable state={state} footnote="Nothing you did is lost." />
+          </Rise>
+        ) : mine.length === 0 ? (
+          <Rise className="pt-4">
+            <p className="max-w-[320px] text-[12.5px] leading-relaxed text-mist">
+              {query.trim().length > 0
+                ? `No group you are in matches “${query.trim()}”.`
+                : "You have not joined a group yet."}
+            </p>
+          </Rise>
+        ) : (
+          mine.map((e) => (
+            <Rise key={e.key} className="pt-1">
+              <MyGroupRow entry={e} />
+            </Rise>
+          ))
+        )}
+
+        {/* ---- And the groups saved on this phone --------------------------
+            A DIFFERENT RECORD, NEVER MERGED INTO THE LIST ABOVE. Each row
+            carries the one tap that moves it to the account (§2.2), and the
+            section draws nothing when there is none. */}
+        <DeviceGroupsSection query={query} />
+
+        {/* ---- Create ------------------------------------------------------ */}
+        {/* A LINK, NOT A BUTTON, SINCE S7. The form is its own screen, so this
+            is a way to somewhere rather than a switch on this one — which also
+            means it can be long-pressed, opened in a tab and shared, like every
+            other way into the form. */}
+        <Rise className="pt-10">
+          <div className="flex justify-center">
+            <Link
+              to="/social/groups/new"
+              className="flex h-11 items-center gap-2 rounded-pill bg-azure px-5 text-[13.5px] font-medium text-obsidian transition-colors hover:bg-azure-bright"
+            >
+              <Plus size={15} strokeWidth={2} aria-hidden />
+              Create group
+            </Link>
+          </div>
+        </Rise>
       </Stagger>
     </Screen>
   );
 }
 
-/**
- * The list, and every state it can honestly be in.
- *
- * Split out so each branch is visible at a glance: a group list that silently
- * renders empty is indistinguishable from one that failed to load, and this
- * screen must never be that.
- */
-function GroupsBody({
-  scope,
-  state,
-  privacy,
-  onChanged,
-}: {
-  scope: "discover" | "mine";
-  state: SharedGroups;
-  privacy: GroupPrivacy;
-  onChanged: () => void;
-}) {
-  /*
-   * DISCOVER DOES NOT NEED AN ACCOUNT. Browsing signed-out used to show only
-   * "Sign in to see who wants your mountains" — an empty screen that reads as
-   * "groups aren't built". Discovering what exists is public; JOINING is what
-   * needs to know who you are, and that is where the sign-in wall belongs.
-   */
-  if (scope === "discover") {
-    const real = state.status === "ready" ? state.groups : [];
-
-    if (DEMO_GROUPS.length === 0 && real.length === 0) {
-      return (
-        /* Centred type, no frame. An outline around "there is nothing here"
-           draws a container round nothing and makes an honest empty state look
-           like a component that failed. */
-        <Rise className="py-10 text-center">
-          <p className="mx-auto max-w-[300px] text-[13px] leading-relaxed text-mist">
-            No groups yet. A group appears here the moment somebody adds a mountain they want to
-            climb.
-          </p>
-        </Rise>
-      );
-    }
-
-    return (
-      <>
-        {DEMO_GROUPS.length > 0 && (
-          <Rise className="pt-4">
-            <Disclaimer>{GROUPS_DEMO_NOTICE}</Disclaimer>
-          </Rise>
-        )}
-        {/* `pt-8` between groups, not `pt-3` inside an outline. With the
-            frames gone it is the air that has to say where one group ends and
-            the next begins, so it is given enough of it to do the job. */}
-        {DEMO_GROUPS.map((g) => (
-          <Rise key={g.id} className="pt-8">
-            <DemoGroupCard group={g} />
-          </Rise>
-        ))}
-        {real.map((g) => (
-          <Rise key={g.id} className="pt-8">
-            <GroupCoverCard group={g} privacy={privacy} onChanged={onChanged} />
-          </Rise>
-        ))}
-      </>
-    );
-  }
-
-  if (state.status === "loading") {
-    return (
-      <Rise className="py-10 text-center">
-        <p className="text-[13px] text-mist">Loading groups…</p>
-      </Rise>
-    );
-  }
-
-  if (state.status !== "ready") {
-    /* Every non-ready state, in one place. `SharedUnavailable` already spells
-       out signed-out, no-backend, not-provisioned and unreachable separately —
-       re-deriving that copy here is how two screens end up disagreeing about
-       what went wrong. */
-    return (
-      <Rise className="pt-4">
-        <SharedUnavailable
-          state={state}
-          /* The live screen has no "Your groups" list on it, so this says what
-             is true here: Discover still draws, and a group made on this device
-             is a different record that never went to a server. */
-          footnote="Nothing you have done is lost. Discover still shows what this build can show, and the expeditions you plan on this device are a separate record that has never needed a server."
-        />
-      </Rise>
-    );
-  }
-
-  const shown = state.groups.filter((g) => g.joinedByMe);
-
-  if (shown.length === 0) {
-    return (
-      <Rise className="py-10 text-center">
-        <p className="mx-auto max-w-[300px] text-[13px] leading-relaxed text-mist">
-          You have not joined a group yet. Discover shows the mountains other people are gathering
-          around.
-        </p>
-      </Rise>
-    );
-  }
-
-  return shown.map((g) => (
-    <Rise key={g.id} className="pt-8">
-      <GroupCoverCard group={g} privacy={privacy} onChanged={onChanged} />
-    </Rise>
-  ));
-}
-
-/**
- * A placeholder group, drawn exactly as the mockup draws one — cover, lock,
- * member and post counts, Join.
- *
- * THE JOIN BUTTON IS DISABLED, and that is the honest rendering. There is no
- * groups backend, so a button that flipped to "Joined" would be recording a
- * membership nowhere and telling somebody they are in a party they are not in.
- * `GROUPS_DEMO_NOTICE` above the list says why, so the disabled state has its
- * reason on screen rather than looking broken.
- */
-function DemoGroupCard({ group }: { group: DemoGroup }) {
-  /*
-   * "Request to join", not "Join", on the locked cards — the one place this
-   * build knowingly diverges from the drawing. See §5 in the file header: a
-   * private group cannot be joined, `group_members_insert` admits a self-insert
-   * into a public group only, and a Join button there could do nothing but
-   * raise. The padlock is the owner's own mark and stays exactly as drawn.
-   */
-  const label = group.private ? "Request to join" : "Join";
-
+/** A facet toggle. 44px, because every control on this screen is. */
+function FilterChip({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
-    /*
-     * A GROUP IS A DISTINCT OBJECT — AND THE OBJECT IS THE PHOTOGRAPH.
-     *
-     * It was a bordered graphite box with the cover inset 1px inside it, which
-     * is a frame wearing a picture. The cover now runs edge to edge out of the
-     * screen's gutter (`-mx-5`), the name stays on it under the same scrim, and
-     * everything else comes back to the page's own left edge. Air, not an
-     * outline, is what separates one group from the next — see the `pt-8` in
-     * the list above.
-     */
-    <div>
-      <div className="relative -mx-5 h-[132px] w-auto bg-slate">
-        <img
-          src={group.cover}
-          alt=""
-          aria-hidden
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 scrim-bottom" />
-        <p className="absolute bottom-3 left-5 right-5 flex items-center gap-1.5 text-[19px] text-snow">
-          <span className="truncate">{group.name}</span>
-          {group.private && <Lock size={13} strokeWidth={1.9} className="shrink-0 text-mist" />}
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 pt-3.5">
-        <p className="tnum min-w-0 truncate text-[12.5px] text-mist">
-          {/* The mockup's own abbreviation — "1.2K members · 156 posts". */}
-          {abbreviate(group.members)} members · {group.posts} posts
-        </p>
-        <button
-          type="button"
-          disabled
-          aria-label={`${label} ${group.name} — this is a placeholder group and nobody can join it`}
-          /* A control keeps its boundary — that border is what says "you may
-             press this" — but it stops borrowing the container radius, so a
-             button and a panel never read as the same object. */
-          className="h-11 shrink-0 rounded-[10px] border border-azure/40 px-5 text-[13.5px] text-azure/60"
-        >
-          {label}
-        </button>
-      </div>
-
-      {/*
-       * THE REASON AT THE CONTROL, not only in the notice above the list.
-       *
-       * `GROUPS_DEMO_NOTICE` sits above all four cards and scrolls off the top;
-       * by the fourth card a reader sees a greyed-out button and nothing saying
-       * why, which is the exact thing a disabled control must never be. Same
-       * line, in the same place, the real `GroupCoverCard` puts under its own
-       * row, so the two kinds of card explain themselves the same way. It has
-       * no rule over it any more: a hairline there separated the sentence from
-       * the very control it is explaining.
-       */}
-      <p className="pt-2.5 text-[11.5px] leading-relaxed text-mist">
-        A placeholder, shown to review this layout. There is no such group, so there is nothing to
-        {group.private ? " ask to join" : " join"}.
-      </p>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        "h-11 rounded-pill border px-3.5 text-[12.5px] transition-colors",
+        on
+          ? "border-azure/70 bg-azure/[0.10] text-azure"
+          : "border-hairline text-mist hover:border-hairline-strong hover:text-snow",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
 /**
- * "1,240" as "1.2K", which is how the owner's drawing writes it.
- *
- * Only ever applied to the demo cards. A real `member_count` is a measured
- * figure and is printed whole: rounding somebody's group of 1,204 people to
- * "1.2K" on a screen where the exact number is knowable is a small invention
- * for no reason, and the counts that need abbreviating are the invented ones.
+ * WHY THERE IS NOTHING TO DISCOVER — and these are six different sentences on
+ * purpose. "Nobody has made a group" and "ICEFALL could not ask" would lead a
+ * climber to opposite conclusions and only one of them is something this app
+ * knows.
  */
-function abbreviate(n: number): string {
-  if (n < 1000) return n.toLocaleString("en-GB");
-  const k = n / 1000;
-  return `${k >= 10 ? Math.round(k) : Math.round(k * 10) / 10}K`;
+function discoverAbsence(
+  state: SharedGroups,
+  query: string,
+  chip: Chip,
+  facetsOn: boolean,
+  goalName: string | null,
+): string {
+  const q = query.trim();
+  if (q.length > 0) return `No group matches “${q}”.`;
+  if (chip === "goal") return `No group here is for ${goalName ?? "your objective"}.`;
+  if (facetsOn) return "No group matches the filters you have set.";
+  if (state.status === "loading") return "Looking for groups…";
+  /* Honest empty discovery (structure plan §3.4): one sentence per state, and
+     never a placeholder card. */
+  if (state.status === "no-backend") return "Groups need ICEFALL's server, and this build has none.";
+  if (state.status === "signed-out") return "Sign in to see groups.";
+  if (state.status === "unreachable") return "ICEFALL's server could not be reached.";
+  if (state.status === "not-provisioned") return "Groups are not switched on for this server yet.";
+  return "No groups yet.";
+}
+
+/* -------------------------------------------------------------------------- */
+/* The rail card                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A tall photographic card: the mountain and the member count over the top of
+ * the picture, the group's name across the foot of it.
+ *
+ * EVERY CARD IS A LINK. An example opens through the same route and hooks as a
+ * real group, and says "Example" at the top of its picture.
+ */
+function DiscoverCard({ entry }: { entry: Entry }) {
+  const members = memberLine(entry);
+  const door = doorWord(entry);
+
+  const body = (
+    <>
+      <EntryCover entry={entry} />
+      <div className="absolute inset-0 scrim-bottom" />
+      {/* TWO SCRIMS, as every hero in this app has. `scrim-bottom` darkens the
+          foot for the name; the member count and the status mark sit at the TOP
+          of the picture, which on a card of sky is the brightest part of it. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-obsidian/70 via-obsidian/25 to-transparent" />
+
+      {/* Top line — what the mockup puts there, as far as it is knowable. */}
+      <div className="absolute inset-x-3.5 top-3 flex items-start justify-between gap-2">
+        <p className="tnum min-w-0 truncate text-[11px] text-snow/85">
+          {members ?? "Member count not available"}
+        </p>
+        {entry.example ? (
+          <span className="shrink-0 rounded-pill bg-obsidian/70 px-2 py-0.5 text-[10px] text-mist backdrop-blur">
+            {EXAMPLE_LABEL}
+          </span>
+        ) : entry.joined ? (
+          <span className="shrink-0 rounded-pill bg-obsidian/70 px-2 py-0.5 text-[10px] text-azure backdrop-blur">
+            Joined
+          </span>
+        ) : entry.ask === "pending" ? (
+          <span className="shrink-0 rounded-pill bg-obsidian/70 px-2 py-0.5 text-[10px] text-mist backdrop-blur">
+            Asked
+          </span>
+        ) : entry.ask === "declined" ? (
+          <span className="shrink-0 rounded-pill bg-obsidian/70 px-2 py-0.5 text-[10px] text-mist backdrop-blur">
+            Not accepted
+          </span>
+        ) : null}
+      </div>
+
+      {/* Foot — the eyebrow, then the name, as every hero in this app does it. */}
+      <div className="absolute inset-x-3.5 bottom-3.5">
+        <p className="truncate text-[10px] uppercase tracking-[0.16em] text-snow/70">
+          {entry.about ?? entry.aboutAbsence ?? ""}
+        </p>
+        {/*
+          THE CLAMP IS INLINE, AND IT WAS MEASURED RATHER THAN ASSUMED.
+          A group name may be 80 characters (`MAX_GROUP_NAME`) — five lines on a
+          228px card, which would climb out of the picture. `src/index.css:411`
+          records that Tailwind's `line-clamp-2` resolves to `display: flow-root`
+          in this engine and clips to a HEIGHT rather than at a line, showing the
+          wrong lines, and adds `.clamp-2` for it.
+          MEASURED ON THE RENDERED CARD, 2026-09-11, Chrome 152: an 80-character
+          name in this element is 49px tall, which is exactly two lines of its
+          24.4px leading — so the clamp holds. Note that `getComputedStyle`
+          reports `flow-root` here EVEN WITH `-webkit-box` set inline, so the
+          computed value is not the test; the height is. Written inline so no
+          cascade can take it away.
+        */}
+        <p
+          className="display mt-1 text-[23px] leading-[1.06] text-snow"
+          style={
+            {
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 2,
+              overflow: "hidden",
+            } as React.CSSProperties
+          }
+        >
+          {entry.name}
+        </p>
+        {door && (
+          <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-snow/75">
+            {entry.visibility === "private" ? (
+              <Lock size={11} strokeWidth={1.9} aria-hidden className="shrink-0" />
+            ) : (
+              <Globe size={11} strokeWidth={1.9} aria-hidden className="shrink-0" />
+            )}
+            {door}
+          </p>
+        )}
+      </div>
+    </>
+  );
+
+  const frame = "relative h-[268px] w-[228px] shrink-0 overflow-hidden rounded-[18px] bg-slate";
+
+  return (
+    <Link to={entry.to} className={cn(frame, "block")} aria-label={`Open ${entry.name}`}>
+      {body}
+    </Link>
+  );
 }
 
 /**
- * One real group, drawn as the mockup draws it — and with the ONE control the
- * database will actually accept.
+ * The picture on a group, and the three honest answers.
  *
- * THE BUTTON IS DECIDED BY THE ROW, NEVER BY A DEFAULT. `group_members_insert`
- * takes a self-insert into a public group outright and into a private one only
- * behind an accepted request, so:
- *
- *   public                 Join
- *   private, never asked   Request to join, with `PRIVATE_MEANS_ASK` beside it
- *   private, asked         nothing to press — the founder has it
- *   private, accepted      Join, with `ACCEPTED_NOT_SEATED` saying why there is
- *                          still a tap: only this device can seat this person
- *   private, declined      nothing to press, and it says so rather than
- *                          offering an ask the primary key would collide with
- *   privacy unreadable     NO join control at all, with the reason at the
- *                          control — see the note on `GroupPrivacy`
+ * A GROUP HAS NO COVER FIELD — not on `public.groups`, not on `MountainGroup`,
+ * not on the local `Expedition`. So the picture is the MOUNTAIN's, resolved by
+ * `useMountainImage`, which marks its own stand-in terrain rather than passing
+ * it off as a summit photograph. Where the peak cannot be resolved at all there
+ * is no photograph to draw and none is invented: the card keeps its slate.
  */
-function GroupCoverCard({
-  group,
-  privacy,
-  onChanged,
-}: {
-  group: MountainGroup;
-  privacy: GroupPrivacy;
-  onChanged: () => void;
-}) {
-  const actions = useGroupActions();
-  const navigate = useNavigate();
-  /*
-   * WITNESSED OUTCOMES, not optimism. Each of these is set only after a write
-   * the server acknowledged — `join` returns true on a real insert or on the
-   * duplicate that means you were already in, `requestJoin` only on a row that
-   * landed. Nothing here is a local mirror of a membership: the list is re-read
-   * through `onChanged` and these two flags only carry the card until it
-   * arrives.
-   */
-  const [justJoined, setJustJoined] = useState(false);
-  const [justAsked, setJustAsked] = useState(false);
+function EntryCover({ entry }: { entry: Entry }) {
+  if (entry.cover !== null) {
+    return (
+      <img src={entry.cover} alt="" aria-hidden loading="lazy" className="h-full w-full object-cover" />
+    );
+  }
+  if (entry.peak !== null) return <PeakCover peak={entry.peak} />;
+  return null;
+}
 
-  // The peak's own photograph, by slug — never matched on the group's title.
-  const mountain = MOUNTAINS.find((m) => m.id === group.destinationId);
+function PeakCover({ peak }: { peak: NonNullable<Entry["peak"]> }) {
+  const image = useMountainImage(peak);
+  return (
+    <>
+      <img
+        src={image.src}
+        alt=""
+        aria-hidden
+        loading="lazy"
+        className={cn("h-full w-full object-cover", image.real ? "opacity-100" : "opacity-45")}
+      />
+      {!image.real && (
+        /* The stand-in keeps saying so. Dimmed AND marked: a reader glancing at
+           a rail must not come away believing they have seen the summit. */
+        <span className="absolute left-3.5 top-9 rounded-pill bg-obsidian/70 px-2 py-0.5 text-[10px] text-mist backdrop-blur">
+          {image.caption ?? "Representative terrain"}
+        </span>
+      )}
+    </>
+  );
+}
 
-  const joined = group.joinedByMe || justJoined;
-  const visibility = privacy.status === "ready" ? (privacy.visibility.get(group.id) ?? null) : null;
-  const ask = privacy.status === "ready" ? (privacy.asks.get(group.id) ?? null) : null;
-  // Deployed-and-public, or a server with no privacy at all: both mean this
-  // group can be joined outright, and the second is a fact rather than a guess.
-  const openToAnyone = privacy.status === "not-deployed" || visibility === "public";
-  const isPrivate = visibility === "private";
-  const pending = isPrivate && (justAsked || ask === "pending");
+/* -------------------------------------------------------------------------- */
+/* The list rows                                                               */
+/* -------------------------------------------------------------------------- */
 
-  /*
-   * WHETHER THIS CARD KNOWS WHICH DOOR THE GROUP HAS.
-   *
-   * `ready` WITH NO ENTRY FOR THIS GROUP COUNTS AS NOT KNOWING, and that is not
-   * a theoretical case: the group list and this privacy list are two requests a
-   * moment apart, so a group created between them is on one and not the other.
-   * Without this the card would fall through every branch below and render an
-   * empty space where the button goes, with nothing anywhere saying why.
-   */
-  const privacyKnown =
-    privacy.status === "not-deployed" || (privacy.status === "ready" && visibility !== null);
-  const unreadable = privacy.status !== "loading" && !privacyKnown;
+/**
+ * One group you are in: thumbnail, name, mountain, and the count with the door.
+ *
+ * A ROW IS A LINK. The list this replaces rendered plain <div>s, so a group you
+ * had joined could not be opened from this screen at all.
+ */
+function MyGroupRow({ entry }: { entry: Entry }) {
+  const members = memberLine(entry);
+  const door = doorWord(entry);
+  const meta = [members ?? "Member count not available", door].filter(Boolean).join(" · ");
 
   return (
-    /* Same treatment as `DemoGroupCard` — the cover is the object, edge to
-       edge, and the rest of the group sits on the page under it. */
-    <div>
-      <div className="relative -mx-5 h-[132px] w-auto bg-slate">
-        {mountain?.photo ? (
-          <img
-            src={mountain.photo}
-            alt=""
-            aria-hidden
-            loading="lazy"
-            className="h-full w-full object-cover"
-          />
-        ) : null}
-        <div className="absolute inset-0 scrim-bottom" />
-        <p className="absolute bottom-3 left-5 right-5 flex items-center gap-1.5 text-[19px] text-snow">
-          <span className="truncate">{group.name}</span>
-          {/* The owner's own mark for private, and drawn ONLY where the server
-              actually said private. An unread privacy setting gets no lock:
-              a padlock is a claim about who may get in. */}
-          {isPrivate && (
-            <Lock size={13} strokeWidth={1.9} className="shrink-0 text-mist" aria-label="Private" />
-          )}
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 pt-3.5">
-        <p className="tnum min-w-0 truncate text-[12.5px] text-mist">
-          {/* Null is unknown, and says so. It is never rendered as zero. */}
-          {group.memberCount === null
-            ? "Member count not available"
-            : `${group.memberCount} ${group.memberCount === 1 ? "member" : "members"}`}
-          {group.intendedOn && ` · ${fmtDate(group.intendedOn)}`}
-        </p>
-
-        {joined ? (
-          <span className="grid h-11 shrink-0 place-items-center rounded-[10px] border border-hairline px-5 text-[13.5px] text-mist-dim">
-            Joined
-          </span>
-        ) : privacy.status === "loading" ? (
-          /* No button until the answer is in. Drawing "Join" and swapping it
-             for "Request to join" a moment later is how somebody taps the
-             wrong one — and on a private group that tap can only raise. */
-          <span className="flex shrink-0 items-center gap-2 px-2 py-2 text-[12.5px] text-mist-dim">
-            <Loader2 size={13} className="animate-spin" aria-hidden="true" />
-            Checking
-          </span>
-        ) : unreadable /* NO CONTROL AT ALL, and the sentence below the row says why. Neither
-             button can be drawn honestly: one of the two would be refused by
-             the database and this card cannot tell which. */ ? null : pending ? (
-          /* Not a disabled button. There is nothing for this person to press —
-             the decision is somebody else's — and a greyed-out control would
-             read as a feature that is not finished. */
-          <span className="grid h-11 shrink-0 place-items-center rounded-[10px] border border-hairline px-5 text-[13.5px] text-mist-dim">
-            Asked
-          </span>
-        ) : ask === "declined" ? (
-          <span className="grid h-11 shrink-0 place-items-center rounded-[10px] border border-hairline px-5 text-[13.5px] text-mist-dim">
-            Not accepted
-          </span>
-        ) : openToAnyone || ask === "accepted" ? (
-          <button
-            type="button"
-            disabled={actions.busy}
-            onClick={async () => {
-              const ok = await actions.join(group.id);
-              // NAVIGATED ONLY ON A WITNESSED JOIN. `join` returns true on an
-              // insert the server took, or on the duplicate key that means the
-              // membership was already there — both of which really do put this
-              // person inside. A refusal leaves them here with the sentence.
-              if (!ok) return;
-              setJustJoined(true);
-              /* §6: joining a public group opens it. The join was the decision
-                 and a second tap is friction, and the group opens on its
-                 details and its members rather than the conversation — who and
-                 when matter more than the talk to somebody who has just walked
-                 in. `GroupWorkspace` sends a uuid-shaped id to the server
-                 group's space; see §7C before removing this. */
-              navigate(`/social/groups/${group.id}`);
-            }}
-            className="h-11 shrink-0 rounded-[10px] bg-azure px-5 text-[13.5px] text-obsidian transition-colors hover:bg-azure-bright disabled:opacity-60"
-          >
-            {actions.busy ? "Joining…" : "Join"}
-          </button>
-        ) : isPrivate ? (
-          <button
-            type="button"
-            disabled={actions.busy}
-            onClick={async () => {
-              const ok = await actions.requestJoin(group.id);
-              if (ok) setJustAsked(true);
-              // Refreshed either way: a refused ask is usually one that already
-              // exists, and the re-read is what turns the card into "Asked" or
-              // "Not accepted" instead of leaving the same button there.
-              onChanged();
-            }}
-            className="h-11 shrink-0 rounded-[10px] border border-azure/50 px-4 text-[13.5px] text-azure transition-colors hover:border-azure disabled:opacity-60"
-          >
-            {actions.busy ? "Asking…" : "Request to join"}
-          </button>
-        ) : null}
-      </div>
-
-      {/* One line under the row, and only where there is something true to put
-          in it. The reason sits AT the control rather than in a header. */}
-      {(actions.error ||
-        unreadable ||
-        (!joined && (pending || ask === "declined" || ask === "accepted" || isPrivate))) && (
-        <p className="pt-2.5 text-[11.5px] leading-relaxed text-mist">
-          {actions.error
-            ? actions.error
-            : unreadable
-              ? // No button was drawn at all, and this says why.
-                //
-                // NOT `GROUP_SPACE_UNREACHABLE` or `GROUP_SPACE_REFUSED`: both
-                // of those are about a group that could not be OPENED, and this
-                // group is open on the screen right now — its name, its
-                // mountain and its member count all arrived. The one thing
-                // missing is which door it has.
-                privacy.status === "unknown" && privacy.reason === "unreachable"
-                ? "ICEFALL could not reach the server, so it does not know whether this group is open to anyone or approved by whoever started it. It will not offer a button that might only fail — try again when you have signal."
-                : "ICEFALL could not read whether this group is open to anyone or approved by whoever started it, so it is not offering a button that might only fail. Everything else on this card is real."
-              : pending
-                ? "You have asked to join. Whoever started this group decides, and ICEFALL cannot hurry them."
-                : ask === "declined"
-                  ? "Your request to join was not accepted, so this group's members and messages stay closed to you."
-                  : ask === "accepted"
-                    ? ACCEPTED_NOT_SEATED
-                    : PRIVATE_MEANS_ASK}
-        </p>
+    <Link
+      to={entry.to}
+      className="flex min-h-[64px] items-center gap-3.5 py-2 transition-opacity hover:opacity-80"
+    >
+      {entry.peak ? (
+        <MountainThumb peak={entry.peak} size={52} />
+      ) : (
+        <span
+          aria-hidden
+          className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-[10px] border border-hairline bg-slate text-mist-dim"
+        >
+          <MountainIcon size={18} strokeWidth={1.5} />
+        </span>
       )}
-    </div>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[14px] text-snow">{entry.name}</span>
+          {entry.visibility === "private" && (
+            <Lock size={11} strokeWidth={1.9} aria-label="Private" className="shrink-0 text-mist-dim" />
+          )}
+          {entry.example && (
+            <span className="shrink-0 rounded-pill border border-hairline px-1.5 py-px text-[10px] text-mist">
+              {EXAMPLE_LABEL}
+            </span>
+          )}
+        </span>
+        <span className="mt-0.5 block truncate text-[11.5px] text-mist">
+          {entry.about ?? entry.aboutAbsence ?? ""}
+        </span>
+        <span className="tnum mt-0.5 block truncate text-[11.5px] text-mist-dim">
+          {meta}
+          {entry.intendedOn && ` · ${fmtDate(entry.intendedOn)}`}
+        </span>
+      </span>
+    </Link>
   );
 }
 
@@ -1047,19 +1340,22 @@ const CREATE_REFUSED =
   "ICEFALL's server would not say how a group's privacy is set, so this form cannot record your choice and nothing would be created.";
 
 /**
- * START A GROUP: a mountain, a name, and who may get in.
+ * START A GROUP: what it is about, a name, and who may get in.
  *
- * ── WHY THIS IS INLINE AND NOT A ROUTE ──────────────────────────────────────
- * `/social/groups/new` already exists and makes an `Expedition` — the plan
- * held on this device, with its window, its party size and its checklist. This
- * makes a row in `public.groups`, which is on the server and which strangers
- * can find. Two records that share the word "group", and sending both through
- * one route is how somebody comes to believe their private plan was published.
+ * ── IT IS THE ONLY CREATE FORM, AND IT HAS A ROUTE ──────────────────────────
+ * `/social/groups/new` renders this, full-screen, through
+ * `screens/groups/create/CreateGroupPage.tsx` (slice S7). It used to be inline
+ * here and could not have a route, because that path made an `Expedition` — a
+ * plan held on one phone — and two records sharing the word "group" is how
+ * somebody comes to believe their private plan was published. There is one
+ * kind of group now, so there is one form and one door to it.
  *
- * ── THE THREE THINGS THE DATABASE INSISTS ON ────────────────────────────────
- *   A MOUNTAIN. `destination_id` is NOT NULL and a trigger refuses a trek, so
- *   the peak is chosen first and from the catalogue ICEFALL can actually place.
- *   The picker is the one this file already has — a second one would drift.
+ * ── WHAT THE DATABASE INSISTS ON ────────────────────────────────────────────
+ *   NOT A MOUNTAIN. Since `group_type_and_trip.sql`, `destination_id` is
+ *   nullable and `groups_subject_is_coherent` takes a mountain, a trek, or no
+ *   place at all with the group's own `topic` instead. The subject is still
+ *   chosen first, and from the SERVER's catalogue where it is a place, because
+ *   a row the foreign key does not know is refused at the last tap.
  *   A NAME, 1–80 characters, checked here so the limit is a sentence rather
  *   than a constraint violation.
  *   A VISIBILITY, and `useGroupActions.create` takes it as a required argument
@@ -1072,22 +1368,46 @@ const CREATE_REFUSED =
  * is on screen rather than only in the SQL, because a pre-selected privacy
  * setting is a decision this app made on somebody's behalf.
  */
-function CreateGroupCard({
+/**
+ * What a new group is about, as the form holds it.
+ *
+ * THREE ANSWERS, AND "NOTHING IN PARTICULAR" IS ONE OF THEM. The owner's ruling
+ * of 16 Sep 2026 is that a group need not be mountain related, so the picker is
+ * not a wall any more — but the three are kept apart in the type, because a
+ * catalogue row and a line somebody typed are different kinds of fact and only
+ * the first is a place ICEFALL can draw anything from.
+ */
+type GroupSubject =
+  | { kind: "destination"; destination: GroupDestination }
+  | { kind: "topic"; label: string }
+  | { kind: "none" };
+
+export function CreateGroupCard({
   privacy,
   onClose,
   onCreated,
+  titleRow = true,
 }: {
   privacy: GroupPrivacy;
   onClose: () => void;
-  onCreated: () => void;
+  /** Called once the server has answered with an id. Nothing to refresh on the
+      create route, where the list is not on screen. */
+  onCreated?: () => void;
+  /**
+   * The form's own "Start a group" row with its Close. Drawn when the form is
+   * inside another screen; suppressed on `/social/groups/new`, where the page's
+   * own `ScreenHeader` is the title and the back chevron is the way out. Two of
+   * either would be two ways to leave one form.
+   */
+  titleRow?: boolean;
 }) {
   const actions = useGroupActions();
   const navigate = useNavigate();
   const goal = usePrimaryGoal();
 
-  // The mountain comes first, so the picker is what opens.
+  // The subject comes first, so the picker is what opens.
   const [picking, setPicking] = useState(true);
-  const [peakName, setPeakName] = useState<string | null>(null);
+  const [subject, setSubject] = useState<GroupSubject | null>(null);
   const [name, setName] = useState("");
   const [visibility, setVisibility] = useState<GroupVisibility>("public");
   const [day, setDay] = useState("");
@@ -1098,16 +1418,15 @@ function CreateGroupCard({
   } | null>(null);
 
   /*
-   * The single mapping from a peak's NAME to the slug the database takes,
-   * imported rather than reimplemented — `network/interest.ts` carries the same
-   * note. A second copy of that rule drifts and starts filing groups against
-   * the wrong mountain.
+   * THE PLACES COME FROM THE SERVER, not from the app's own catalogue (R14).
+   * The two lists differ in both directions, so a group filed against the app's
+   * idea of a peak is a group the database refuses — see `groups/mountains.ts`.
    */
-  const destinationId = peakName === null ? null : destinationIdForPeak(peakName);
-  const mountain = useMemo(
-    () => (destinationId === null ? null : (MOUNTAINS.find((m) => m.id === destinationId) ?? null)),
-    [destinationId],
-  );
+  const catalogue = useGroupDestinations();
+  const destination = subject?.kind === "destination" ? subject.destination : null;
+  /* The app's record of the same peak, for the photograph and nothing else.
+     Absent for most of the server's mountains, which is not a fault. */
+  const peak = appPeakFor(destination?.id ?? null);
 
   /**
    * Why the server cannot take this group, where that is already known.
@@ -1147,7 +1466,7 @@ function CreateGroupCard({
         <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
           {made.visibility === "public"
             ? "You are its first member. Anyone signed in to ICEFALL can join it from here, and everyone in it can see each other and talk."
-            : "You are its first member. People can ask to join and you decide — its name and mountain are visible to everyone, its members and its messages are not."}
+            : "You are its first member. People can ask to join and you decide — its name and what it is about are visible to everyone, its members and its messages are not."}
         </p>
         {/* The founder is seated by `groups_creator_joins`, an AFTER INSERT
             trigger, so they are genuinely in the group and this really does
@@ -1162,29 +1481,38 @@ function CreateGroupCard({
     );
   }
 
-  /* ---- Which mountain --------------------------------------------------- */
+  /* ---- What the group is about ------------------------------------------ */
 
   if (picking) {
     return (
       <MountainPicker
-        title="Which mountain is this group for?"
-        intro="A group in ICEFALL is about one mountain. These are the peaks it can file a group against — the server refuses a group that is not attached to a real one, so nothing outside this list is offered."
+        title="What is this group about?"
+        intro="A mountain or a trek from ICEFALL's catalogue, so the group is filed against a real record and the people who want it can find it — or the group's own subject, if it is about something else."
         footer={null}
         busyPeak={null}
         suggested={goal?.name ?? null}
         takenIds={NOTHING_TAKEN}
-        onPick={(picked) => {
-          setPeakName(picked);
+        catalogue={catalogue}
+        onPickDestination={(picked) => {
+          setSubject({ kind: "destination", destination: picked });
           // Offered as a starting point in an editable field, never submitted
-          // on somebody's behalf: the peak's name is what the next person
+          // on somebody's behalf: the place's name is what the next person
           // scanning the list has to recognise, and most groups are called it.
-          setName((current) => (current.trim().length === 0 ? picked : current));
+          setName((current) => (current.trim().length === 0 ? picked.name : current));
+          setPicking(false);
+        }}
+        onSubject={(label) => {
+          setSubject(label.length > 0 ? { kind: "topic", label } : { kind: "none" });
+          if (label.length > 0) {
+            setName((current) => (current.trim().length === 0 ? label : current));
+          }
           setPicking(false);
         }}
         onClose={() => {
           // Backing out of the picker with nothing chosen closes the whole
-          // flow — a create form with no mountain has nothing to show.
-          if (peakName === null) onClose();
+          // flow — a create form nobody has said anything to has nothing to
+          // show. "Nothing in particular" is a choice and is not this.
+          if (subject === null) onClose();
           else setPicking(false);
         }}
       />
@@ -1194,7 +1522,10 @@ function CreateGroupCard({
   /* ---- The form --------------------------------------------------------- */
 
   const trimmed = name.trim();
-  const ready = destinationId !== null && trimmed.length > 0 && trimmed.length <= MAX_GROUP_NAME;
+  /* The subject is no longer a condition: a group may be about nothing in
+     particular. The name is, because a group nobody can recognise is a group
+     nobody joins. */
+  const ready = trimmed.length > 0 && trimmed.length <= MAX_GROUP_NAME;
 
   return (
     /*
@@ -1207,58 +1538,65 @@ function CreateGroupCard({
      * title row, and above the one control that commits all of it.
      */
     <div className="pt-2">
-      <div className="flex items-center gap-3 border-b border-hairline pb-3">
-        <Users size={15} strokeWidth={1.6} className="shrink-0 text-mist-dim" aria-hidden="true" />
-        <span className="flex-1 text-[13px] text-snow">Start a group</span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="section-label shrink-0 text-mist-dim transition-colors hover:text-snow"
-        >
-          Close
-        </button>
-      </div>
+      {titleRow && (
+        <div className="flex items-center gap-3 border-b border-hairline pb-3">
+          <Users size={15} strokeWidth={1.6} className="shrink-0 text-mist-dim" aria-hidden="true" />
+          <span className="flex-1 text-[13px] text-snow">Start a group</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="section-label shrink-0 text-mist-dim transition-colors hover:text-snow"
+          >
+            Close
+          </button>
+        </div>
+      )}
 
       <div className="space-y-6 py-5">
-        {/* ---- Mountain ---------------------------------------------------- */}
+        {/* ---- What it is about -------------------------------------------- */}
         <div>
-          <p className="section-label">Mountain</p>
+          <p className="section-label">What it is about</p>
           <button
             type="button"
             onClick={() => setPicking(true)}
             className="mt-2 flex w-full items-center gap-3 rounded-tile border border-hairline px-3 py-2.5 text-left transition-colors hover:border-hairline-strong"
           >
-            {mountain && (
+            {peak && (
               <MountainThumb
                 peak={{
-                  name: mountain.name,
-                  elevationM: mountain.elevationM,
-                  lat: mountain.coords.lat,
-                  lon: mountain.coords.lon,
+                  name: peak.name,
+                  elevationM: peak.elevationM,
+                  lat: peak.coords.lat,
+                  lon: peak.coords.lon,
                 }}
                 size={36}
               />
             )}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] text-snow">
-                {mountain?.name ?? peakName ?? "Choose a mountain"}
+                {destination
+                  ? destination.name
+                  : subject?.kind === "topic"
+                    ? subject.label
+                    : "Nothing in particular"}
               </span>
-              {mountain && (
-                <span className="tnum mt-0.5 block truncate text-[11px] text-mist-dim">
-                  {fmtElevation(mountain.elevationM)} m · {mountain.range}
-                </span>
-              )}
+              <span className="tnum mt-0.5 block truncate text-[11px] text-mist-dim">
+                {destination
+                  ? destinationDetail(destination)
+                  : subject?.kind === "topic"
+                    ? "The group's own subject"
+                    : "Filed against no place"}
+              </span>
             </span>
             <span className="section-label shrink-0 text-mist-dim">Change</span>
           </button>
 
-          {/* Only reachable if the catalogue and the slug rule ever disagree.
-              Said rather than swallowed: the create call would be refused for
-              a reason nobody could see. */}
-          {peakName !== null && destinationId === null && (
+          {/* A subject in somebody's own words is a label, and ICEFALL says so
+              rather than letting it look like a place it has a record of. */}
+          {subject?.kind === "topic" && (
             <p className="mt-2 text-[11.5px] leading-relaxed text-mist">
-              ICEFALL could not place {peakName} against a real mountain record, so it will not file
-              a group against a peak it had to guess. Choose another.
+              ICEFALL has no record to file this against, so the group carries these words and
+              nothing else — no mountain page, no photograph and no height.
             </p>
           )}
         </div>
@@ -1332,28 +1670,28 @@ function CreateGroupCard({
           </div>
 
           <p className="mt-2.5 text-[11.5px] leading-relaxed text-mist">{VISIBILITY_EXPLAINED}</p>
-          <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-            Public is the starting point because it is the safer mistake: a group more open than you
-            meant is something you can see and change, where one that is quietly closed just looks
-            broken to everyone trying to join it.
-          </p>
+          <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">Public to start — the safer mistake, and changeable.</p>
         </div>
 
         {/* ---- When ------------------------------------------------------- */}
         <div>
-          <p className="section-label">When you mean to go</p>
+          {/* THE WORDING FOLLOWS THE SUBJECT. A group about a community of
+              people is not "on the mountain" on any date, and a screen reader
+              reads the label out as written. */}
+          <p className="section-label">{destination ? "When you mean to go" : "When it happens"}</p>
           <DateField
             className="mt-2"
-            label="The date this group means to be on the mountain"
+            label={
+              destination
+                ? `The date this group means to be on ${destination.name}`
+                : "The date this group means to go"
+            }
             value={day}
             onChange={setDay}
             min={todayKey()}
             placeholder="Not decided"
           />
-          <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">
-            Optional. Leave it out if the party has not fixed one — undecided is a normal state for
-            a group on the day it is made, and ICEFALL will not put a guess in its place.
-          </p>
+          <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">Optional.</p>
         </div>
       </div>
 
@@ -1363,18 +1701,23 @@ function CreateGroupCard({
           className="w-full"
           disabled={!ready || blocked !== null || actions.busy}
           onClick={async () => {
-            if (destinationId === null) return;
-            const id = await actions.create(
-              trimmed,
-              destinationId,
+            const id = await actions.create({
+              name: trimmed,
+              destinationId: destination?.id ?? null,
+              topic: subject?.kind === "topic" ? subject.label : null,
+              /* With a destination the server derives this from that row and
+                 refuses a word that disagrees with it, so it is left alone.
+                 Without one, nobody has been asked what sort of subject it is
+                 — "other" is what ICEFALL actually knows. */
+              about: destination ? aboutForKind(destination.kind) : "other",
               visibility,
-              day.length > 0 ? day : undefined,
-            );
+              intendedOn: day.length > 0 ? day : undefined,
+            });
             // `create` returns the id the server sent back, not the absence of
             // an error. Nothing is reported as made without it.
             if (id === null) return;
             setMade({ id, name: trimmed, visibility });
-            onCreated();
+            onCreated?.();
           }}
         >
           {actions.busy ? (
@@ -1395,9 +1738,7 @@ function CreateGroupCard({
         )}
         {blocked === null && !ready && (
           <p className="mt-2.5 text-[11.5px] leading-relaxed text-mist-dim">
-            {destinationId === null
-              ? "Pick the mountain this group is for."
-              : "Give the group a name."}
+            Give the group a name.
           </p>
         )}
         {actions.error && (
@@ -1439,7 +1780,8 @@ export function PeopleAndGroupsMerged() {
 
         <MountainsSection />
 
-        <YourGroupsSection />
+        {/* "Your groups" used to sit here. It drew groups saved on one phone,
+            which nobody can start any more — see the note where it stood. */}
 
         {/* PEOPLE IS ITS OWN TAB AGAIN. It was fused in here under the old
             PH-08 note ("People and groups need to be one page together"); the
@@ -1629,7 +1971,9 @@ function MountainsSection() {
           <MountainPicker
             busyPeak={busy}
             suggested={goal?.name ?? null}
-            takenIds={new Set(mine.map((g) => g.destinationId))}
+            /* Only a group filed against a catalogue row can make a peak
+               "already taken" — one about something else takes none. */
+            takenIds={new Set(mine.flatMap((g) => (g.destinationId === null ? [] : [g.destinationId])))}
             onPick={(name) => void add(name)}
             onClose={() => setPicking(false)}
           />
@@ -1903,28 +2247,114 @@ function InterestedList({ groupId }: { groupId: string }) {
         </p>
       )}
 
-      <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">
-        Wanting the same mountain is all this says about anybody. ICEFALL has not checked anyone's
-        experience, identity or safety — read the reminder at the end of this page before you
-        arrange to meet.
-      </p>
+      <p className="mt-3 text-[11px] leading-relaxed text-mist-dim">Wanting the same mountain is all this says about anybody.</p>
     </div>
   );
 }
 
 /**
- * The picker.
+ * One catalogue row, in a line.
  *
- * ONLY MOUNTAINS ICEFALL CAN PLACE. `destinations` is what a list is filed
- * against, and this app can resolve exactly the catalogue in `@/data/mock/
- * mountains` to a real row there. Offering a free-text peak would produce a
- * list nobody else could ever find, so the honest limit is stated instead of
- * hidden behind a search box that quietly fails.
+ * A trek is drawn as a trek. Its `region` is a slug in the catalogue ("alps"),
+ * so the country is used instead — printing a slug at somebody is showing them
+ * a database, and a trek has no elevation to show because a trek has no summit.
+ */
+function destinationDetail(destination: GroupDestination): string {
+  if (destination.kind === "trek") {
+    return destination.country ? `Trek · ${destination.country}` : "Trek";
+  }
+  const parts: string[] = [];
+  if (destination.elevationM !== null) parts.push(`${fmtElevation(destination.elevationM)} m`);
+  const where = destination.range ?? destination.country;
+  if (where) parts.push(where);
+  return parts.join(" · ");
+}
+
+/**
+ * The server's catalogue as rows, or the one sentence that says why there are
+ * none. Every absence keeps its own words — see `groups/mountains.ts`.
+ */
+function CatalogueList({
+  state,
+  matches,
+  onPick,
+}: {
+  state: DestinationsState;
+  matches: GroupDestination[];
+  onPick: (destination: GroupDestination) => void;
+}) {
+  if (state.status === "loading") {
+    return (
+      <p className="px-4 py-4 text-[12px] leading-relaxed text-mist-dim">
+        Reading ICEFALL's catalogue of places…
+      </p>
+    );
+  }
+  if (state.status !== "ready") {
+    return <p className="px-4 py-4 text-[12px] leading-relaxed text-mist">{state.message}</p>;
+  }
+  if (matches.length === 0) {
+    return (
+      <p className="px-4 py-4 text-[12px] leading-relaxed text-mist">
+        Nothing in ICEFALL's catalogue matches that.
+      </p>
+    );
+  }
+  return (
+    <ul>
+      {matches.map((destination) => {
+        // The app draws 14 of the server's 52 mountains, so most rows have no
+        // photograph here. That is the ordinary case and not a gap to fill.
+        const app = appPeakFor(destination.id);
+        return (
+          <li key={destination.id}>
+            <button
+              type="button"
+              onClick={() => onPick(destination)}
+              className="flex w-full items-center gap-3 border-b border-hairline px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-white/[0.02]"
+            >
+              {app && (
+                <MountainThumb
+                  peak={{
+                    name: app.name,
+                    elevationM: app.elevationM,
+                    lat: app.coords.lat,
+                    lon: app.coords.lon,
+                  }}
+                  size={36}
+                />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] text-snow">{destination.name}</span>
+                <span className="tnum mt-0.5 block truncate text-[11px] text-mist-dim">
+                  {destinationDetail(destination)}
+                </span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The picker, in its two modes.
  *
- * It is only ever offered when the shared list is actually live. A picker that
- * opens when nothing can be written would be a control that exists to look
- * available; where the list is unavailable the section says so instead, and
- * points at the group you CAN create on this device.
+ * WITHOUT `catalogue` it is what it has always been: the app's own 14 peaks,
+ * handing back a NAME, for the parked interest lists.
+ *
+ * WITH `catalogue` it offers the SERVER's list — every mountain and every trek
+ * in `destinations` — and hands back the row itself. That difference is the
+ * whole of risk R14: the app's catalogue is not the server's, three of the
+ * app's peaks have no row there at all, and 41 of the server's mountains are
+ * missing from the app (counted by `npm run test:groups-mountain-lists`). A
+ * create form built on the app's list would offer three peaks that cannot be
+ * saved and hide the Ama Dablams that can.
+ *
+ * NOTHING FALLS BACK. Where the catalogue cannot be read the picker says so in
+ * one sentence and offers the other honest route — a group with its own subject
+ * — rather than quietly showing a list that would be refused at the last tap.
  */
 function MountainPicker({
   busyPeak,
@@ -1935,12 +2365,16 @@ function MountainPicker({
   title,
   intro,
   footer,
+  catalogue,
+  onPickDestination,
+  onSubject,
 }: {
   busyPeak: string | null;
   /** The athlete's own objective, floated to the top. Never an invented pick. */
   suggested: string | null;
   takenIds: ReadonlySet<string>;
-  onPick: (peakName: string) => void;
+  /** The app's own catalogue mode. Required there, unused with `catalogue`. */
+  onPick?: (peakName: string) => void;
   onClose: () => void;
   /*
    * THREE COPY OVERRIDES, AND THEY EXIST SO THERE IS ONLY ONE PICKER.
@@ -1957,8 +2391,24 @@ function MountainPicker({
   intro?: string;
   /** `null` hides the footer entirely; undefined keeps the default. */
   footer?: React.ReactNode;
+  /**
+   * The server's catalogue. Given it, the picker offers those rows instead of
+   * the app's, and `onPickDestination` is what answers.
+   */
+  catalogue?: DestinationsState;
+  onPickDestination?: (destination: GroupDestination) => void;
+  /**
+   * The group's subject in its own words. `""` means "not about a place at
+   * all", which is a real answer and not a skipped question.
+   */
+  onSubject?: (label: string) => void;
 }) {
   const [query, setQuery] = useState("");
+
+  const serverOptions = useMemo(() => {
+    if (!catalogue || catalogue.status !== "ready") return [];
+    return catalogue.destinations.filter((d) => destinationMatches(d, query));
+  }, [catalogue, query]);
 
   const options = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1999,7 +2449,7 @@ function MountainPicker({
         </p>
 
         <label className="mt-3 block">
-          <span className="sr-only">Search mountains</span>
+          <span className="sr-only">Search the catalogue</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -2010,7 +2460,13 @@ function MountainPicker({
       </div>
 
       <div className="max-h-[19rem] overflow-y-auto border-t border-hairline">
-        {options.length === 0 ? (
+        {catalogue ? (
+          <CatalogueList
+            state={catalogue}
+            matches={serverOptions}
+            onPick={(destination) => onPickDestination?.(destination)}
+          />
+        ) : options.length === 0 ? (
           <p className="px-4 py-4 text-[12px] leading-relaxed text-mist">
             No mountain in the catalogue matches that. ICEFALL can only file a list against a
             mountain it can place, so nothing is offered here that it cannot.
@@ -2050,7 +2506,7 @@ function MountainPicker({
                 <li key={mountain.id}>
                   <button
                     type="button"
-                    onClick={() => onPick(mountain.name)}
+                    onClick={() => onPick?.(mountain.name)}
                     disabled={already || busyPeak !== null}
                     className={cn(
                       shell,
@@ -2066,14 +2522,45 @@ function MountainPicker({
         )}
       </div>
 
+      {/*
+       * THE OTHER HONEST ROUTE, and the reason the picker is no longer a wall.
+       * The owner's ruling is that a group need not be about a mountain: it can
+       * be about a region, a community of people, or a peak ICEFALL has no
+       * record of. Those become the group's own subject, which is a label and
+       * never a place — nothing is linked to it and nothing is drawn from it.
+       */}
+      {onSubject && (
+        <div className="border-t border-hairline px-4 py-3">
+          <p className="text-[11px] leading-relaxed text-mist-dim">
+            A group does not have to be about a place in the catalogue.
+          </p>
+          {query.trim().length > 0 && query.trim().length <= MAX_GROUP_TOPIC && (
+            <button
+              type="button"
+              onClick={() => onSubject(query.trim())}
+              className="mt-2 block w-full truncate rounded-tile border border-hairline px-3 py-2.5 text-left text-[13px] text-snow transition-colors hover:border-hairline-strong"
+            >
+              Make this group about “{query.trim()}”
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onSubject("")}
+            className="section-label mt-2 block text-mist-dim transition-colors hover:text-snow"
+          >
+            Nothing in particular
+          </button>
+        </div>
+      )}
+
       {footer === undefined ? (
         <div className="border-t border-hairline px-4 py-3">
           <p className="text-[11px] leading-relaxed text-mist-dim">
             Climbing something outside this catalogue?{" "}
             <Link to="/social/groups/new" className="text-azure">
-              Create a group for it
+              Start a group for it
             </Link>{" "}
-            — that takes any peak the map can find, and stays on this device.
+            — a group can carry its own subject, with or without a place from here.
           </p>
         </div>
       ) : (
@@ -2166,340 +2653,28 @@ function InterestFailureNote({ reason }: { reason: InterestFailure }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 2 — Your groups                                                             */
+/* 2 — Your groups: GONE, AND NOT AS DEAD CODE                                 */
 /* -------------------------------------------------------------------------- */
 
-/**
- * The parties this athlete is planning, on this device.
+/*
+ * `YourGroupsSection`, `Filters`, `Facet` and `Pill` were deleted in slice S7,
+ * and this note is here so nobody restores them from git believing they were
+ * lost by accident with the rest of the parked page.
  *
- * A GROUP IS AN `Expedition` — the record, the creation flow and the membership
- * are the ones that already existed, and the workspace at /social/groups/:id
- * is where one is actually planned. That rule is unchanged by the merge and by
- * the shared lists above: those are about a mountain, this is about a trip.
+ * They listed, filtered and offered to create an `Expedition` — a group saved
+ * on one phone. Structure plan D1 makes a group one thing, a row in
+ * `public.groups`, and D7 says no new group can be started on the phone alone.
+ * So that section's "Create a group" pointed at a form that no longer exists,
+ * its copy ("stored on this device", "opens a workspace to plan it in")
+ * described a screen that has been retired, and `GroupCard`, which drew each
+ * row, is retired with it (structure plan §2.5).
  *
- * There is no "Discover groups · 0" heading here any more. It used to state a
- * true zero, but on this page it would sit under a live list of mountains other
- * people want and read as a contradiction. Discovery moved to where discovery
- * actually happens; what is left is what is genuinely yours and genuinely
- * local, and the disclaimer at the end says so.
+ * WHAT IS PARKED IS STILL PARKED. The half of this page the guard block at the
+ * top of this file protects — "add a mountain, see who else wants it":
+ * `MountainsSection`, `MountainRow`, `InterestedList`, `CatalogueList` and
+ * `MountainPicker` — is untouched and still works.
+ *
+ * AND PHONE GROUPS ARE NOT GONE. They are read-only on the Groups tab and at
+ * `/social/groups/expedition-…`, each with one tap that moves it to the
+ * account (structure plan §2).
  */
-function YourGroupsSection() {
-  const { expeditions, groupStyle, objectives } = useApp();
-  const goal = usePrimaryGoal();
-
-  const [filters, setFilters] = useState<GroupFilters>(NO_FILTERS);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-
-  // The mountain facet is built from the groups that exist, so every option in
-  // it returns something. A list of peaks nobody has a group for would be a
-  // menu of dead ends dressed as a search.
-  const peakNames = useMemo(
-    () =>
-      [...new Set(expeditions.map((e) => e.peakName))].sort((a, b) => a.localeCompare(b, "en-GB")),
-    [expeditions],
-  );
-
-  const visible = useMemo(
-    () => expeditions.filter((e) => matchesFilters(e, groupStyle[e.id], filters)),
-    [expeditions, groupStyle, filters],
-  );
-
-  // Offered in the empty state as a starting point — the athlete's OWN
-  // objective, never a mountain invented to make the screen look busy.
-  const suggestedPeak = goal?.name ?? objectives.find((o) => !o.summitedAt)?.name ?? null;
-  const createHref = suggestedPeak
-    ? `/social/groups/new?peak=${encodeURIComponent(suggestedPeak)}`
-    : "/social/groups/new";
-
-  const filtering = anyFilterActive(filters);
-
-  return (
-    <>
-      <Rise className="pt-8">
-        <SectionLabel
-          action={
-            expeditions.length > 0 ? (
-              <Button asChild variant="ghost" size="sm" className="-mr-2">
-                <Link to="/social/groups/new">
-                  <Plus size={14} strokeWidth={1.8} aria-hidden="true" />
-                  New
-                </Link>
-              </Button>
-            ) : undefined
-          }
-        >
-          {/* The count is what is on this device, and nothing else. */}
-          Your groups · {expeditions.length}
-        </SectionLabel>
-      </Rise>
-
-      <Rise className="pt-3">
-        <p className="text-[13px] leading-relaxed text-mist">
-          A group is a party forming around one mountain and one date window — the window, the size,
-          the training you do together. This is where you build yours and plan it properly.
-        </p>
-      </Rise>
-
-      {expeditions.length > 0 && (
-        <Rise className="pt-3">
-          <Filters
-            filters={filters}
-            peakNames={peakNames}
-            open={filtersOpen}
-            onOpen={() => setFiltersOpen((v) => !v)}
-            onChange={setFilters}
-          />
-        </Rise>
-      )}
-
-      {expeditions.length === 0 ? (
-        <Rise className="pt-3">
-          <Card>
-            <p className="text-[14px] text-snow">You have not created a group yet</p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-              Creating one records the mountain, the window and the party you want on this device,
-              and opens a workspace to plan it in. It is not published: a plan is yours, and the
-              mountains above are the public part of this page.
-            </p>
-            <Button asChild variant="secondary" className="mt-4 w-full">
-              <Link to={createHref}>
-                <Plus size={15} strokeWidth={1.8} aria-hidden="true" />
-                Create a group
-              </Link>
-            </Button>
-          </Card>
-        </Rise>
-      ) : visible.length === 0 ? (
-        <Rise className="pt-3">
-          {/* A real search over real data came back empty. Said in exactly
-              those terms, because it is the one empty state on this page that a
-              filter genuinely caused. */}
-          <Card>
-            <p className="text-[14px] text-snow">
-              None of your {expeditions.length} {expeditions.length === 1 ? "group" : "groups"}{" "}
-              match these filters
-            </p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-mist">
-              This one really is a filtered list of what you have — nothing has been hidden from
-              you.
-            </p>
-            <Button
-              variant="secondary"
-              className="mt-4 w-full"
-              onClick={() => setFilters(NO_FILTERS)}
-            >
-              Clear filters
-            </Button>
-          </Card>
-        </Rise>
-      ) : (
-        <>
-          {filtering && (
-            <Rise className="pt-3">
-              <p className="tnum text-[11px] text-mist-dim">
-                Showing {visible.length} of {expeditions.length}.
-              </p>
-            </Rise>
-          )}
-          {visible.map((group) => (
-            <Rise key={group.id} className="pt-3">
-              <GroupCard
-                group={group}
-                style={groupStyle[group.id]}
-                to={`/social/groups/${group.id}`}
-              />
-            </Rise>
-          ))}
-        </>
-      )}
-
-      {/* NO `NETWORK_NOT_CONNECTED_NOTICE` HERE. Both halves used to end with
-          it, and on one page the two copies landed within a centimetre of each
-          other — the second one taught the reader to skip the first. The
-          people half keeps it, on the card where somebody is about to press a
-          button that reads like "send"; this section says the same thing in
-          the terms that actually apply to it, on the card above. */}
-    </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Filters                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The facets, over the athlete's own groups.
- *
- * Collapsed by default: with a handful of real groups the list is short, and a
- * wall of pills above two cards would be a search interface pretending to have
- * a corpus behind it. Everything here narrows a real list of real records.
- */
-function Filters({
-  filters,
-  peakNames,
-  open,
-  onOpen,
-  onChange,
-}: {
-  filters: GroupFilters;
-  peakNames: readonly string[];
-  open: boolean;
-  onOpen: () => void;
-  onChange: (f: GroupFilters) => void;
-}) {
-  const count = activeFilterCount(filters);
-
-  return (
-    <Card inset={false}>
-      <div className="flex items-center gap-3 px-4 py-3">
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-expanded={open}
-          className="flex flex-1 items-center gap-2.5 text-left"
-        >
-          <SlidersHorizontal size={15} strokeWidth={1.6} className="shrink-0 text-mist-dim" />
-          <span className="text-[13px] text-snow">Filters</span>
-          {count > 0 && (
-            <span className="tnum rounded-full border border-azure/40 bg-azure/[0.08] px-2 py-[2px] text-[10px] text-azure">
-              {count}
-            </span>
-          )}
-        </button>
-        {count > 0 && (
-          <button
-            type="button"
-            onClick={() => onChange(NO_FILTERS)}
-            className="section-label shrink-0 text-mist-dim transition-colors hover:text-snow"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {open && (
-        <div className="space-y-4 border-t border-hairline px-4 py-4">
-          <Facet label="Mountain">
-            <Pill
-              label="Any mountain"
-              selected={filters.peakName === null}
-              onSelect={() => onChange({ ...filters, peakName: null })}
-            />
-            {peakNames.map((name) => (
-              <Pill
-                key={name}
-                label={name}
-                selected={filters.peakName === name}
-                onSelect={() => onChange({ ...filters, peakName: name })}
-              />
-            ))}
-          </Facet>
-
-          <Facet label="Dates">
-            {DATE_OPTIONS.map((id) => (
-              <Pill
-                key={id}
-                label={DATE_FILTER_LABELS[id]}
-                selected={filters.date === id}
-                onSelect={() => onChange({ ...filters, date: id })}
-              />
-            ))}
-          </Facet>
-
-          <Facet label="Experience" note="Self-declared. ICEFALL checks nobody's ability.">
-            <Pill
-              label="Any experience"
-              selected={filters.experience === null}
-              onSelect={() => onChange({ ...filters, experience: null })}
-            />
-            {EXPERIENCE_OPTIONS.map((id) => (
-              <Pill
-                key={id}
-                label={EXPERIENCE_LABELS[id]}
-                selected={filters.experience === id}
-                onSelect={() => onChange({ ...filters, experience: id })}
-              />
-            ))}
-          </Facet>
-
-          <Facet label="Party size">
-            {SIZE_OPTIONS.map((id) => (
-              <Pill
-                key={id}
-                label={SIZE_FILTER_LABELS[id]}
-                selected={filters.size === id}
-                onSelect={() => onChange({ ...filters, size: id })}
-              />
-            ))}
-          </Facet>
-
-          <Facet
-            label="Guided or independent"
-            note="Recorded in a group's workspace. Groups where nobody has said are “not recorded”, never assumed independent."
-          >
-            {STYLE_OPTIONS.map((id) => (
-              <Pill
-                key={id}
-                label={STYLE_FILTER_LABELS[id]}
-                selected={filters.style === id}
-                onSelect={() => onChange({ ...filters, style: id })}
-              />
-            ))}
-          </Facet>
-
-          <Facet label="Training together" note="Groups whose stated intent includes training.">
-            <Pill
-              label="Training together"
-              selected={filters.trainingTogether}
-              onSelect={() => onChange({ ...filters, trainingTogether: !filters.trainingTogether })}
-            />
-          </Facet>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function Facet({
-  label,
-  note,
-  children,
-}: {
-  label: string;
-  note?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <p className="section-label">{label}</p>
-      <div className="mt-2 flex flex-wrap gap-2">{children}</div>
-      {note && <p className="mt-2 text-[11px] leading-relaxed text-mist-dim">{note}</p>}
-    </div>
-  );
-}
-
-function Pill({
-  label,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={cn(
-        "rounded-full border px-3.5 py-1.5 text-[12px] transition-colors",
-        selected
-          ? "border-azure/55 bg-azure/[0.12] text-azure"
-          : "border-hairline text-mist-dim hover:border-hairline-strong hover:text-mist",
-      )}
-    >
-      {label}
-    </button>
-  );
-}

@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Flag, MessageCircle, MoreHorizontal, Send, ShieldCheck } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Flag,
+  Heart,
+  MessageCircle,
+  MoreHorizontal,
+  Send,
+  ShieldCheck,
+} from "lucide-react";
 import { Avatar } from "@/components/ui/primitives";
 import { LikeButton } from "@/components/social/LikeButton";
 import { fmtRelative } from "@/lib/format";
+import { linkify } from "@/lib/linkify";
 import { PERSON_ROUTE } from "@/search/people";
 import { postIdKind } from "@/social/posts";
 import { canNameAnAccount } from "@/social/publicProfile";
@@ -140,6 +150,54 @@ export function PostCard({
    */
   const settled = post.likedByMe ?? false;
   const [liked, setLiked] = useState(settled);
+
+  /**
+   * DOUBLE TAP TO LIKE, and the two things that make it work on a phone.
+   *
+   * Charlie, 11 September 2026: "on social media when u double clikc a post,
+   * it auto likes it like instagram".
+   *
+   * 1. `onDoubleClick` alone is not enough. iOS Safari does not fire it
+   *    reliably on a non-interactive element, and where it does it arrives
+   *    after a delay long enough to feel broken. So the touch path is timed by
+   *    hand — two touches inside 300ms, within 40px of each other, is a double
+   *    tap. The distance check is what stops a scroll flick that happens to
+   *    stop twice from liking somebody's post.
+   * 2. IT ONLY EVER LIKES. Instagram's rule, and the right one: the gesture is
+   *    easy to fire by accident, so taking a like BACK on a second double tap
+   *    would mean an accidental gesture silently undoing a deliberate one.
+   *    Unliking stays a deliberate tap on the heart.
+   *
+   * The burst is keyed on a counter rather than a boolean so a second tap
+   * restarts the animation instead of being swallowed while the first runs.
+   */
+  const [burst, setBurst] = useState(0);
+  const lastTap = useRef<{ t: number; x: number; y: number } | null>(null);
+
+  const doubleTapLike = () => {
+    setBurst((b) => b + 1);
+    if (liked) return; // already liked: show the heart, change nothing
+    setLiked(true);
+    onLike?.(post, true);
+  };
+
+  const onMediaTouchEnd = (e: React.TouchEvent) => {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const now = Date.now();
+    const prev = lastTap.current;
+    lastTap.current = { t: now, x: t.clientX, y: t.clientY };
+    if (!prev) return;
+    const quick = now - prev.t < 300;
+    const near = Math.hypot(t.clientX - prev.x, t.clientY - prev.y) < 40;
+    if (quick && near) {
+      lastTap.current = null;
+      /* The photograph is wrapped in a Link to the post. A double tap must not
+         also navigate, so the second tap's click is cancelled here. */
+      e.preventDefault();
+      doubleTapLike();
+    }
+  };
   useEffect(() => {
     setLiked(post.likedByMe ?? false);
   }, [post.id, post.likedByMe]);
@@ -179,6 +237,41 @@ export function PostCard({
   const story = storyTimeLeft(post);
   const media = post.media;
   const sized = media?.width && media?.height;
+
+  /**
+   * THE CAROUSEL, WHEN THERE IS ONE.
+   *
+   * `post.gallery` is only ever the second-or-more image chosen in one
+   * compose (see `@/social/types`) — never a stand-in for `media`, and never
+   * both set at once. `gallerySized` mirrors `sized` above so the reserved
+   * box behaves identically: the first image's own dimensions when the
+   * uploader recorded them, the drawing's 4:5 otherwise.
+   */
+  const gallery = post.gallery && post.gallery.length > 0 ? post.gallery : undefined;
+  const gallerySized = gallery?.[0]?.width && gallery?.[0]?.height;
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const galleryScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setGalleryIndex(0);
+  }, [post.id]);
+
+  /* Tracks which slide is centred as the reader scrolls — no library, just
+     the snap container's own scroll position. Rounds rather than floors so
+     a slide that is barely past centre still counts as "arrived". */
+  const onGalleryScroll = () => {
+    const el = galleryScrollRef.current;
+    if (!el || el.clientWidth === 0) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setGalleryIndex((prev) => (prev === idx ? prev : idx));
+  };
+
+  const scrollToGalleryIndex = (idx: number) => {
+    const el = galleryScrollRef.current;
+    if (!el || !gallery) return;
+    const clamped = Math.max(0, Math.min(gallery.length - 1, idx));
+    el.scrollTo({ left: clamped * el.clientWidth, behavior: still ? "auto" : "smooth" });
+  };
 
   /**
    * WHERE THE BYLINE GOES, OR NOWHERE AT ALL.
@@ -350,22 +443,133 @@ export function PostCard({
         </p>
       )}
 
-      {/* Media, edge to edge. A photograph opens the post; a video keeps its
-          own controls. The box is reserved from the uploader's dimensions when
-          there are any, and falls back to the drawing's 4:5 rather than a
-          guess. */}
-      {media && (
+      {/* Media, edge to edge. A photograph (or a gallery of them) opens the
+          post; a video keeps its own controls. The box is reserved from the
+          uploader's dimensions when there are any, and falls back to the
+          drawing's 4:5 rather than a guess. */}
+      {(gallery || media) && (
         <div
-          className="relative w-full overflow-hidden bg-slate/40"
-          style={{ aspectRatio: sized ? `${media.width} / ${media.height}` : "4 / 5" }}
+          className="group relative w-full overflow-hidden bg-slate/40"
+          style={{
+            aspectRatio: gallery
+              ? gallerySized
+                ? `${gallery[0].width} / ${gallery[0].height}`
+                : "4 / 5"
+              : sized
+                ? `${media!.width} / ${media!.height}`
+                : "4 / 5",
+          }}
+          onDoubleClick={gallery || media?.kind !== "video" ? doubleTapLike : undefined}
+          onTouchEnd={gallery || media?.kind !== "video" ? onMediaTouchEnd : undefined}
         >
-          {media.kind === "video" ? (
+          {gallery ? (
+            <>
+              {/* THE STRIP. Plain scroll-snap, no drag library: a horizontal
+                  scroller that snaps one image per screen-width, which is
+                  swipeable on a phone and wheel/trackpad-scrollable on a
+                  desktop for free. `still` (prefers-reduced-motion) turns the
+                  snap into an instant jump rather than an animated slide. */}
+              <div
+                ref={galleryScrollRef}
+                onScroll={onGalleryScroll}
+                className={cn(
+                  "flex h-full w-full snap-x snap-mandatory overflow-x-auto",
+                  "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                  !still && "scroll-smooth",
+                )}
+              >
+                {gallery.map((item, i) =>
+                  postHref ? (
+                    <Link
+                      key={item.path ?? `${post.id}-${i}`}
+                      to={postHref}
+                      className="h-full w-full shrink-0 snap-center focus-visible:outline-offset-[-2px]"
+                    >
+                      <img
+                        src={item.url}
+                        alt={item.alt ?? ""}
+                        aria-hidden={item.alt ? undefined : true}
+                        loading={i === 0 ? "eager" : "lazy"}
+                        draggable={false}
+                        className="h-full w-full object-cover"
+                      />
+                    </Link>
+                  ) : (
+                    <img
+                      key={item.path ?? `${post.id}-${i}`}
+                      src={item.url}
+                      alt={item.alt ?? ""}
+                      aria-hidden={item.alt ? undefined : true}
+                      loading={i === 0 ? "eager" : "lazy"}
+                      draggable={false}
+                      className="h-full w-full shrink-0 snap-center object-cover"
+                    />
+                  ),
+                )}
+              </div>
+
+              {/* Prev/next, shown on hover for a mouse — a touch reader has
+                  the swipe itself, so these stay hidden on a touch layout
+                  (`sm:` — no hover to reveal them on a phone anyway) and are
+                  always reachable by keyboard via focus. */}
+              {galleryIndex > 0 && (
+                <button
+                  type="button"
+                  aria-label="Previous image"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    scrollToGalleryIndex(galleryIndex - 1);
+                  }}
+                  className="absolute left-2 top-1/2 hidden -translate-y-1/2 rounded-full bg-obsidian/55 p-1.5 text-snow opacity-0 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60 group-hover:opacity-100 sm:flex"
+                >
+                  <ChevronLeft size={16} strokeWidth={2} aria-hidden />
+                </button>
+              )}
+              {galleryIndex < gallery.length - 1 && (
+                <button
+                  type="button"
+                  aria-label="Next image"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    scrollToGalleryIndex(galleryIndex + 1);
+                  }}
+                  className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded-full bg-obsidian/55 p-1.5 text-snow opacity-0 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azure/60 group-hover:opacity-100 sm:flex"
+                >
+                  <ChevronRight size={16} strokeWidth={2} aria-hidden />
+                </button>
+              )}
+
+              {/* THE POSITION, the actual point of a gallery. Dots over the
+                  image, Instagram's own language for this — the active one
+                  wider rather than a differently-coloured twin, so it reads
+                  at a glance without needing colour. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 bottom-2.5 flex items-center justify-center gap-1"
+              >
+                {gallery.map((_, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "h-1.5 rounded-full bg-snow shadow-[0_0_2px_rgba(0,0,0,0.5)] transition-[width,opacity]",
+                      i === galleryIndex ? "w-3.5 opacity-90" : "w-1.5 opacity-45",
+                    )}
+                  />
+                ))}
+              </div>
+              <span className="sr-only" aria-live="polite">
+                Image {galleryIndex + 1} of {gallery.length}
+              </span>
+            </>
+          ) : media!.kind === "video" ? (
             <video
-              src={media.url}
+              src={media!.url}
               controls
               playsInline
               preload="metadata"
-              aria-label={media.alt || "Video attached to this post"}
+              aria-label={media!.alt || "Video attached to this post"}
               className="h-full w-full object-cover"
             />
           ) : postHref ? (
@@ -376,6 +580,35 @@ export function PostCard({
           ) : (
             photo
           )}
+
+          {/* THE BURST. Instagram's gesture, and its rule: a double tap only
+              ever LIKES. It never takes a like back, because the gesture is
+              easy to fire by accident and undoing somebody's like silently is
+              worse than ignoring a second one. Unliking stays a deliberate tap
+              on the heart. */}
+          <AnimatePresence>
+            {burst && (
+              <motion.span
+                key={burst}
+                aria-hidden
+                className="pointer-events-none absolute inset-0 grid place-items-center"
+                initial={still ? { opacity: 1 } : { opacity: 0, scale: 0.4 }}
+                animate={
+                  still
+                    ? { opacity: 1 }
+                    : { opacity: [0, 1, 1, 0], scale: [0.4, 1.15, 1, 1.3] }
+                }
+                exit={{ opacity: 0 }}
+                transition={still ? { duration: 0 } : { duration: 0.9, times: [0, 0.25, 0.6, 1] }}
+              >
+                <Heart
+                  size={92}
+                  strokeWidth={1.2}
+                  className="fill-snow text-snow drop-shadow-[0_6px_24px_rgba(0,0,0,0.55)]"
+                />
+              </motion.span>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -419,7 +652,7 @@ export function PostCard({
       <div className="px-4 pb-1 pt-2">
         {post.body.trim().length > 0 && (
           <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-snow">
-            <span className="font-semibold">{shownName}</span> {post.body}
+            <span className="font-semibold">{shownName}</span> {linkify(post.body)}
           </p>
         )}
         {postHref && (detail?.chip || detail?.title || detail?.stats?.length) ? (

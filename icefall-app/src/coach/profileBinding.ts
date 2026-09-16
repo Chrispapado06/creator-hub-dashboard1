@@ -59,7 +59,7 @@ import {
    at the moment it is asked, which is also the more correct thing for the
    before-and-after comparison the merge does with it. */
 import { currentSettings, patchSettings } from "@/settings/store";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import type { Discipline, ExperienceLevel } from "@/types";
 
 /** The union the app's own `Discipline` type holds, for narrowing raw strings. */
@@ -90,11 +90,10 @@ export function useCoachingBinding(): CoachingBinding {
     bodyMassKgSet,
     setBodyMassKg,
     user,
-    goals,
     addGoal,
     updateAthleteBasics,
   } = useApp();
-  const primary = goals.find((g) => g.status === "active");
+  const primary = usePrimaryGoal();
 
   const device = useCallback((): DeviceCoachingAnswers => {
     const settings = currentSettings();

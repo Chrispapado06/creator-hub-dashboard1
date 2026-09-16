@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { QualifierBadge } from "@/components/coach/DataState";
 import { Rise, Screen, ScreenHeader, Stagger } from "@/components/layout/chrome";
 import { Group } from "@/components/settings/kit";
 import { Button } from "@/components/ui/primitives";
+import { StartTodayRow } from "@/mountain/StartTodayRow";
 import { asAltitudeIllnessHistory } from "@/services/acclimatisation";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { readableDay } from "@/tracking/adjustments";
@@ -26,6 +27,9 @@ import {
   useTrip,
   type Trip,
 } from "@/trip/trip";
+import { goalIdsWithTheirTrip, pickTripGoal } from "@/objectives/primaryGoal";
+import { useDayKey } from "@/lib/useDayKey";
+import { useDebriefedGoalIds } from "@/objectives/objectiveDebrief";
 
 /**
  * TRIP MODE — the screen for somebody who is on the mountain, not planning one.
@@ -73,8 +77,22 @@ import {
 /* -------------------------------------------------------------------------- */
 
 function StartTrip() {
-  const goal = usePrimaryGoal();
-  const { startTrip } = useTrip();
+  /* Not simply the primary objective: when the date slipped and the trip starts
+     a few days after it, the trip is for that objective (`pickTripGoal`). */
+  const { goals } = useApp();
+  const debriefed = useDebriefedGoalIds();
+  const { startTrip, trips } = useTrip();
+  /* Home's "Open trip prep" names the objective it was preparing (`?goal=`), so
+     the trip lands on that mountain rather than on whatever a rule would pick. */
+  const [params] = useSearchParams();
+  const named = params.get("goal");
+  const day = useDayKey();
+  const goal = useMemo(() => {
+    const asked = named ? goals.find((g) => g.id === named && g.status === "active") : undefined;
+    if (asked) return asked;
+    return pickTripGoal(goals, debriefed, new Date(), goalIdsWithTheirTrip(goals, trips));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `day` re-picks at midnight
+  }, [named, goals, debriefed, trips, day]);
   const [name, setName] = useState(goal?.name ?? "");
   const [start, setStart] = useState(todayISO());
   const [end, setEnd] = useState("");
@@ -150,6 +168,7 @@ function StartTrip() {
                 goalId: goal?.id ?? null,
                 peakName: goal?.name ?? null,
                 peakElevationM: goal?.elevationM ?? null,
+                mountainId: goal?.mountainId ?? null,
                 startDate: start,
                 endDate: end,
               });
@@ -188,7 +207,11 @@ function StartTrip() {
 
 function OpenTrip({ trip }: { trip: Trip }) {
   const today = todayISO();
-  const { coachProfile } = useApp();
+  const { coachProfile, goals } = useApp();
+  /* The objective behind this trip, when it still exists. Only used to carry
+     the curated mountain into Mountain mode's saved pack — the trip's own
+     copied fields are what the schedule and the rescue numbers read. */
+  const tripGoal = trip.goalId ? goals.find((g) => g.id === trip.goalId) : undefined;
   const { nights, nightsOutside, checks, ticks, recordNight, clearNight, endTrip, tickTimelineItem } =
     useTrip();
 
@@ -231,6 +254,25 @@ function OpenTrip({ trip }: { trip: Trip }) {
         {schedule.medicalNote && (
           <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist">{schedule.medicalNote}</p>
         )}
+
+        {/* THE WAY INTO MOUNTAIN MODE (brief M3). On this screen because this
+            is the screen somebody reads on the day, and the line under the
+            button says which dates it will write before it writes them. */}
+        <StartTodayRow
+          className="mt-5"
+          goal={
+            tripGoal
+              ? {
+                  id: tripGoal.id,
+                  name: tripGoal.name,
+                  targetDate: tripGoal.targetDate,
+                  elevationM: tripGoal.elevationM ?? null,
+                  mountainId: tripGoal.mountainId ?? null,
+                }
+              : null
+          }
+          goalMountainId={trip.mountainId ?? tripGoal?.mountainId ?? null}
+        />
       </Group>
 
       {/* ------------------------------------------------------------------ */}

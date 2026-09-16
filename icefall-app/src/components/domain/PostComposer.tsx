@@ -13,7 +13,7 @@ import { savedTrails, type SavedTrail } from "@/services/savedTrails";
 import { useRecordedActivities } from "@/tracking/feed";
 import { activityById } from "@/tracking/activities";
 import type { RecordedActivity } from "@/tracking/types";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import {
   MAX_POST_PHOTOS, OWN_POST_KIND_LABEL, PRIVACY_LABEL, activityForPost, addPost, removePost,
   type MountainRef, type OwnPost, type OwnPostKind, type PostPrivacy,
@@ -49,6 +49,7 @@ export function CreatePostSheet({
   presetMountain?: MountainRef;
 }) {
   const { goals } = useApp();
+  const primaryGoal = usePrimaryGoal();
   const recorded = useRecordedActivities();
   const [kind, setKind] = useState<OwnPostKind | null>(null);
   const [caption, setCaption] = useState("");
@@ -90,7 +91,7 @@ export function CreatePostSheet({
                 onClick={() => {
                   setKind(o.kind);
                   if (o.kind === "objective") {
-                    const g = goals.find((x) => x.status === "active");
+                    const g = primaryGoal;
                     if (g) setObjective({ name: g.name, when: fmtDate(g.targetDate, { day: undefined }) });
                   }
                 }}

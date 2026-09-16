@@ -638,6 +638,40 @@ export type Database = {
         }[];
       };
       health_disconnect: { Args: { p_provider: string }; Returns: undefined };
+
+      /**
+       * THE AMBASSADOR PROGRAMME (migration 20260912150000, NOT YET APPLIED).
+       *
+       * Called once, from `ChooseHandle`, the moment a brand-new account
+       * exists — see `@/ambassador/capture`. Declared here, same as
+       * `open_direct_thread` above, so that one call site type-checks; a
+       * server without the migration answers PGRST202/42P01, which
+       * `claimStoredAmbassadorReferral()` already treats as a tolerable,
+       * silent failure — an ambassador code must never block somebody
+       * finishing their own signup.
+       *
+       * Returns the `ambassador_referrals.id` that now exists (new or, on a
+       * retried call, the one already recorded) as a uuid string.
+       */
+      record_ambassador_referral: { Args: { p_code: string }; Returns: string };
+
+      /**
+       * THE DURABLE, EMAIL-KEYED ATTRIBUTION PATH (migration 20260912160000,
+       * NOT YET APPLIED). Called once alongside `record_ambassador_referral`
+       * above, from `claimAmbassadorReferral()` in `@/ambassador/capture` —
+       * see that file's header for why BOTH are called on every signup
+       * completion. Looks up the signed-in account's own email (never a
+       * client-supplied one) against `pending_ambassador_attributions`,
+       * recorded earlier by an `icefall-web` waitlist signup, and applies it
+       * via `record_ambassador_referral` if found.
+       *
+       * Takes no arguments. Returns the `ambassador_referrals.id` on a
+       * successful attribution, or null when nothing was pending for this
+       * email (the ordinary case for almost every signup) — a null is not an
+       * error and must not be shown as one. Same tolerant-of-missing-
+       * migration posture as the RPC above.
+       */
+      claim_pending_ambassador_attribution: { Args: Record<never, never>; Returns: string | null };
     };
     Enums: {
       icefall_role: IcefallRole;

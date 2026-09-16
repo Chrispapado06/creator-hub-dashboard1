@@ -120,7 +120,7 @@ export const FEED_FILTERS: { id: FeedFilter; label: string; kinds?: PostKind[] }
 /* Demo posts                                                                 */
 /* -------------------------------------------------------------------------- */
 
-import type { CommunityPost } from "./types";
+import type { CommunityPost, Post } from "./types";
 
 /**
  * Times are given as "hours ago" rather than as instants.
@@ -262,4 +262,95 @@ export function agoLabel(hoursAgo: number): string {
   if (hoursAgo < 24) return `${Math.round(hoursAgo)}h ago`;
   const days = Math.round(hoursAgo / 24);
   return days === 1 ? "1d ago" : `${days}d ago`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Adapting a demo post into the server's shape                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE CARD IS NOW THE SERVER'S CARD, so a demo post has to be read AS a
+ * `posts` row before it can be handed to `PostCard`. `screens/explore/
+ * Community.tsx` used to draw its own card and keep this conversion to
+ * itself; it moved here
+ * (2026-09-13) so `screens/social/PostDetail.tsx` could reuse the exact same
+ * conversion when a tapped post turns out to be one of these rather than a
+ * server or device one — one adapter, not two that can drift.
+ *
+ * A STRUCTURAL TWIN OF `PostCard`'s OWN `PostDetail` TYPE, not an import of
+ * it: `components/social/PostCard.tsx` exports a type of that name and this
+ * file deliberately does not reach into it, so the demo adapter here cannot
+ * be broken by an edit to that component's props while it is being worked on
+ * elsewhere. TypeScript compares the two structurally, so a value of this
+ * shape still type-checks wherever `PostCard`'s `detail` prop expects one —
+ * keep the two shapes matching if either one changes.
+ */
+export interface CommunityPostDetail {
+  /** "ACTIVITY" — what kind of post this is, as the mockup's chip. */
+  chip?: string;
+  /** The headline, kept out of the body so it can be set apart. */
+  title?: string;
+  /** "Mont Blanc · July 2026" — the objective, which is why the post exists. */
+  subtitle?: string;
+  /** Distance / elevation / time, for a training post. */
+  stats?: { label: string; value: string }[];
+}
+
+/** The mockup's chip, one word per kind of demo post. */
+const POST_KIND_CHIP: Record<CommunityPost["kind"], string> = {
+  activity: "Activity",
+  summit: "Summit",
+  "route-report": "Conditions",
+  "looking-for-partners": "Partners",
+  milestone: "Milestone",
+  group: "Group",
+};
+
+/**
+ * A demo post's mockup extras — the chip, the headline and the stat trio —
+ * lifted off the row so `feedPost` below can carry only what a real post
+ * could hold.
+ */
+export function feedDetail(post: CommunityPost): CommunityPostDetail {
+  return {
+    chip: POST_KIND_CHIP[post.kind],
+    title: post.title,
+    subtitle: `${post.objective.mountain} · ${post.objective.when}`,
+    stats: post.stats,
+  };
+}
+
+/**
+ * One demo post, read as the `posts` row it would have been.
+ *
+ * WORDS ARE CARRIED, FIGURES ARE NOT. `posts.body` is one NOT NULL text
+ * column, so the title, the body and a route report's note — all of them
+ * sentences somebody wrote — are joined into it. The stats, the bullets, the
+ * milestone percentage and the group's "4 of 6" are dropped: they are
+ * structured claims with no column behind them, and a card that renders them
+ * today is a card that has to invent them tomorrow. `feedDetail` above is
+ * where the dropped ones still show, on the surfaces built to carry them.
+ *
+ * `likeCount` and `commentCount` are the demo row's own counts — unlike a
+ * real fetch there is no live server figure to defer to here.
+ */
+export function feedPost(post: CommunityPost, now: number): Post {
+  const words = [post.body, post.report?.note].filter(Boolean).join("\n\n");
+  return {
+    id: post.id,
+    author: {
+      id: post.author.id,
+      name: post.author.name,
+      // `Author.location` is a label somebody typed, never a coordinate — and
+      // the demo model's band ("Around Chamonix") is already exactly that.
+      location: post.author.region,
+      avatarUrl: post.author.avatar,
+      kind: "profile",
+    },
+    body: words,
+    media: post.photo ? { url: post.photo } : undefined,
+    createdAt: new Date(now - post.hoursAgo * 3_600_000).toISOString(),
+    likeCount: post.likes,
+    commentCount: post.comments,
+  };
 }

@@ -123,6 +123,14 @@ export interface NextObjectiveProposal {
   candidates: ObjectiveCandidate[];
   /** What the ordering means, and what it does not mean. */
   basis: string;
+  /**
+   * `basis` for a screen with room for two lines (Home's "just back" cards).
+   * It keeps the three things `basis` exists to say — what the order is, what
+   * figure it hangs on and whether anyone verified it, and that height is not
+   * difficulty — and drops only the elaboration. Owned here so the wording has
+   * one author.
+   */
+  basisShort: string;
   /** ICEFALL's whole answer on timing. Contains no date. */
   dateNote: string;
   /** What ICEFALL could check about these mountains, which today is nothing. */
@@ -169,6 +177,15 @@ function basisSource(held: Observed<number>): string {
   return held.provenance === "recorded"
     ? `The figure it is measured from is ${metresOf(held.value)} — the highest point a recorded session reached.`
     : `The figure it is measured from is ${metresOf(held.value)}, which is what you have told ICEFALL. Nobody has verified it, and an order built on a self-reported number is no better than the number.`;
+}
+
+function basisShortFor(held: Observed<number> | null): string {
+  if (!held) return "In catalogue order by elevation — that order means nothing about you.";
+  const figure =
+    held.provenance === "recorded"
+      ? `${metresOf(held.value)}, the highest point you have recorded`
+      : `${metresOf(held.value)}, a figure you gave that nobody has verified`;
+  return `Ordered by height above ${figure}. Height says nothing about difficulty.`;
 }
 
 const BASIS_WITHOUT_ALTITUDE =
@@ -223,6 +240,7 @@ export function proposeNextObjective(input: NextObjectiveInput): NextObjectivePr
       headline: NEXT_OBJECTIVE_HEADLINE,
       candidates: [],
       basis: held ? `${BASIS_WITH_ALTITUDE} ${basisSource(held)}` : BASIS_WITHOUT_ALTITUDE,
+      basisShort: basisShortFor(held),
       dateNote: DATE_NOTE,
       requirementNote: requirementNoteFor([]),
       bridge: input.bridge,
@@ -274,6 +292,7 @@ export function proposeNextObjective(input: NextObjectiveInput): NextObjectivePr
     headline: NEXT_OBJECTIVE_HEADLINE,
     candidates: limited,
     basis: held ? `${BASIS_WITH_ALTITUDE} ${basisSource(held)}` : BASIS_WITHOUT_ALTITUDE,
+      basisShort: basisShortFor(held),
     dateNote: DATE_NOTE,
     requirementNote: requirementNoteFor(limited),
     bridge: input.bridge,

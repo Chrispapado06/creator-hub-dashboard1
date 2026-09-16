@@ -22,6 +22,7 @@ import {
 } from "@/components/coach/DataState";
 import { useMountainImage } from "@/components/domain/MountainImage";
 
+import { StartTodayRow } from "@/mountain/StartTodayRow";
 import { assessObjectiveReadiness } from "@/coach/mountainReadiness";
 import type { Dimension, DimensionResult, ObjectiveReadiness } from "@/coach/mountainReadiness";
 import { OBJECTIVE_READINESS_DISCLAIMER } from "@/coach/mountainReadiness";
@@ -33,9 +34,11 @@ import { CHECKLIST_DISCLAIMER, completion, generateChecklist } from "@/services/
 import {
   CONDITIONS_ATTRIBUTION,
   CONDITIONS_DISCLAIMER,
+  forecastAge,
   getMountainConditions,
   rateDay,
 } from "@/services/conditions";
+import { ForecastAgeNote, GREYED } from "@/components/domain/ForecastAge";
 import type { MountainConditions, Reading } from "@/services/conditions";
 import { assessPeak } from "@/services/peakAssessment";
 import type { PeakAssessment } from "@/services/peakAssessment";
@@ -52,7 +55,7 @@ import {
 import { sync } from "@/services/repository";
 
 import { useRecordedActivities } from "@/tracking/feed";
-import { useApp } from "@/state/AppState";
+import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { FOCUS_LABELS, fmtDate, fmtElevation } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Goal, Mountain } from "@/types";
@@ -550,13 +553,11 @@ export default function CommandCentre() {
    * matches nothing falls through to the primary rather than 404ing — the
    * screen is still useful, and it names the mountain it is showing.
    */
+  const primaryGoal = usePrimaryGoal();
   const goal = useMemo<Goal | undefined>(() => {
     const byId = goalId ? goals.find((g) => g.id === goalId) : undefined;
-    if (byId) return byId;
-    return goals
-      .filter((g) => g.status === "active")
-      .sort((a, b) => +new Date(a.targetDate) - +new Date(b.targetDate))[0];
-  }, [goalId, goals]);
+    return byId ?? primaryGoal;
+  }, [goalId, goals, primaryGoal]);
 
   /**
    * A link that names an objective this athlete does not hold.
@@ -698,6 +699,22 @@ export default function CommandCentre() {
 
         <Rise className="pt-6">
           <Countdown goal={goal} daysRemaining={daysRemaining} />
+        </Rise>
+
+        {/* THE WAY IN (brief M3). Here rather than at the foot of the screen:
+            it is what the countdown is counting towards, and starting a day on
+            the mountain should never need a scroll past the kit list. */}
+        <Rise className="pt-6">
+          <StartTodayRow
+            goal={{
+              id: goal.id,
+              name: goal.name,
+              targetDate: goal.targetDate,
+              elevationM,
+              mountainId: mountain?.id ?? goal.mountainId ?? null,
+            }}
+            goalMountainId={mountain?.id ?? goal.mountainId ?? null}
+          />
         </Rise>
 
         <Rise className="pt-6">
@@ -1190,7 +1207,11 @@ function ConditionsPanel({
           </div>
         ) : (
           <>
-            <div className="flex gap-4">
+            <ForecastAgeNote age={forecastAge(state.data.readAt)} scope="current" className="mb-2" />
+            <ForecastAgeNote age={forecastAge(state.data.readAt)} scope="forecast" className="mb-3" />
+            <div
+              className={cn("flex gap-4", forecastAge(state.data.readAt)?.current === "stale" && GREYED)}
+            >
               <ReadingTile
                 label="Summit temp"
                 reading={state.data.current.temperatureC}

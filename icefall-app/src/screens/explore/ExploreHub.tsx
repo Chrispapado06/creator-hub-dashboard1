@@ -25,6 +25,7 @@ import { fmtElevation } from "@/lib/format";
 import { NETWORK_NOT_CONNECTED_NOTICE } from "@/network/types";
 import { locateMe, saveLastPlace } from "@/routes/places";
 import { sync } from "@/services/repository";
+import { useOrganisedGroupCount } from "@/social/groupSpace";
 import { useApp, usePrimaryGoal } from "@/state/AppState";
 import { useTraining } from "@/tracking/training";
 import { trekById, trekDuration, trekRegion, type Trek } from "@/treks";
@@ -471,38 +472,56 @@ function DiscoverCard() {
         }}
       />
       <div className="relative">
-        {/* The arrow floats at the card's edge rather than taking a flex slot:
-          in the drawing the title runs on one line under it, and giving the
-          arrow its own column wrapped "Find Near Trail/Trek" onto two. */}
-        <div className="relative flex items-center gap-4 pr-12">
+        {/* THE CARD IS THE BUTTON — the owner's report ("Find Trek doesn't
+          work when you click on it") was this: the blue card reads as one
+          tappable button, rounded corners, icon, headline and all, but only
+          the title's own text line carried a `Link` — a ~200×32px sliver on
+          a card several times that size. Tapping the icon, "Discover
+          nearby", the "Trails, treks & routes…" line, or any of the padding
+          around them (which is most of the card) hit a plain, non-positioned
+          `<div>` and did nothing.
+
+          A `<Link>` placed UNDER that div as a stretched overlay does not
+          fix it either: this row is `position: relative`, so it already
+          paints above any absolutely-positioned sibling regardless of DOM
+          order, and its box — not just its text — still swallows the tap.
+          The row itself has to be the link. It stays out of "Use current
+          location" / "or pick a region" below, which is a separate row with
+          its own two behaviours and was never part of this bug. */}
+        <Link
+          to="/explore/routes"
+          className="relative flex items-center gap-4 pr-12"
+        >
           <span
             aria-hidden="true"
             className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#FFFFFF]/15 bg-[#FFFFFF]/10"
           >
             <MapPin size={22} strokeWidth={1.6} />
           </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[#FFFFFF]/65">
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12px] font-medium uppercase tracking-[0.16em] text-[#FFFFFF]/65">
               Discover nearby
-            </p>
-            <Link to="/explore/routes" className="display mt-1 block text-[27px] leading-none">
+            </span>
+            <span className="display mt-1 block text-[27px] leading-none">
               Find Near Trail/Trek
-            </Link>
-            <p className="mt-1.5 text-[15px] leading-snug text-[#FFFFFF]/75">
+            </span>
+            <span className="mt-1.5 block text-[15px] leading-snug text-[#FFFFFF]/75">
               Trails, treks &amp; routes around your location
-            </p>
-          </div>
-          <Link
-            to="/explore/routes"
-            aria-label="Open Find"
+            </span>
+          </span>
+          {/* Decorative now — the whole row above is the link, so a second,
+             nested `<a>` here would be both invalid HTML and a second stop
+             on the same destination for a keyboard or screen-reader user. */}
+          <span
+            aria-hidden="true"
             /* Sits over the brightest part of the photograph, where a 10% white
              fill and a thin border disappeared entirely. A dark translucent
              disc with a blur reads on snow and on sky alike. */
             className="absolute right-0 top-1/2 grid h-[38px] w-[38px] -translate-y-1/2 place-items-center rounded-full border border-[#FFFFFF]/45 bg-[#0B1430]/45 backdrop-blur-sm"
           >
             <ArrowRight size={18} strokeWidth={1.8} aria-hidden="true" />
-          </Link>
-        </div>
+          </span>
+        </Link>
 
         <div className="mt-6 flex items-center gap-3 text-[15px]">
           <button
@@ -596,14 +615,15 @@ function CategoryCard({ category }: { category: (typeof CATEGORIES)[number] }) {
 /**
  * The four doors the drawing does not show, behind "See all".
  *
- * Each line under a label is the same statement the old hub made — a real
- * count of something on this device, or the plain fact that the network is not
- * connected. Never a bare `0`, which at zero users would say "nobody" when the
+ * Each line under a label is a real count (on this device, or read from
+ * ICEFALL's server), or a plain sentence where no count could be read. Never a bare `0`, which at zero users would say "nobody" when the
  * truth is "nothing could be searched".
  */
 function MoreDoors({ goal }: { goal: Goal | undefined }) {
-  const { expeditions, connectionRequests } = useApp();
-  const myGroups = expeditions.length;
+  const { connectionRequests } = useApp();
+  /* Server groups this person organises (structure plan §3.5). Null when that
+     cannot be read, and then the door shows no number. */
+  const organised = useOrganisedGroupCount();
   const queued = connectionRequests.length;
   const rangeItems = sync.products.length;
 
@@ -618,13 +638,15 @@ function MoreDoors({ goal }: { goal: Goal | undefined }) {
           : "The network is not connected — there is no directory to search.",
     },
     {
-      to: myGroups > 0 ? "/social?tab=groups" : "/social?tab=groups&create=1",
+      to: "/social?tab=groups",
       label: "Groups",
       icon: UsersRound,
       line:
-        myGroups > 0
-          ? `${myGroups} group${myGroups === 1 ? "" : "s"} you created, held on this device.`
-          : "You have not created a group. Yours would be the only ones that exist.",
+        organised === null
+          ? "Your groups, and groups to join."
+          : organised === 0
+            ? "You do not organise a group yet."
+            : `You organise ${organised} group${organised === 1 ? "" : "s"}.`,
     },
     {
       to: goal ? `/mountain/${encodeURIComponent(goal.id)}/conditions` : "/goals",

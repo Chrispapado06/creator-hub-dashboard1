@@ -24,7 +24,10 @@
 
 import {
   HOURLY_OUTLOOK_HOURS,
+  currentAgeSentence,
   describeWeatherCode,
+  forecastAge,
+  forecastAgeSentence,
   getMountainConditions,
   peakLocalClock,
   weatherKind,
@@ -376,6 +379,64 @@ async function run() {
   eq("1,500 m of visibility is 1.5 km, not 2", fmtVisibility(1500), "1.5 km");
   eq("under a kilometre it stays in metres", fmtVisibility(900), "900 m");
   eq("and past ten it drops the decimal", fmtVisibility(41000), "41 km");
+
+  /* ---------------------------------------------------------------------- */
+  testCase("A forecast the phone kept shows its real age, never as current (plan §3.0)");
+  /* ---------------------------------------------------------------------- */
+
+  // Chamonix is two hours ahead of UTC in September: the stamps are its own clock.
+  const kept = (readLocal: string, nowIso: string) => {
+    at(nowIso);
+    stub({
+      startEpochUtc: Date.parse("2026-09-02T00:00:00Z"),
+      count: 24 * 7,
+      offsetSeconds: 7200,
+      temps: Array.from({ length: 24 * 7 }, () => -5),
+      current: { time: readLocal, temperature_2m: -4, wind_speed_10m: 30 },
+    });
+    return ask();
+  };
+
+  const fresh = await kept("2026-09-03T12:00", "2026-09-03T10:20:00Z");
+  eq("read 20 min ago: readAt is the real instant", fresh.readAt, Date.parse("2026-09-03T10:00:00Z"));
+  eq("fresh: no sentence over the weather now", currentAgeSentence(forecastAge(fresh.readAt)), null);
+  eq("fresh: the temperature is shown", fresh.current.temperatureC.value, -4);
+
+  const twoHours = await kept("2026-09-03T12:00", "2026-09-03T12:10:00Z");
+  eq("2 h old: the weather now carries its age", currentAgeSentence(forecastAge(twoHours.readAt)), "Read 2 h ago. Nothing newer has reached this phone.");
+  eq("2 h old: still shown", twoHours.current.windKph.value, 30);
+  eq("2 h old: the forecast ahead is still fresh", forecastAge(twoHours.readAt)?.forecast, "fresh");
+  eq("4 h old: greyed", forecastAge(Date.parse("2026-09-03T10:00:00Z"), Date.parse("2026-09-03T14:00:01Z"))?.current, "stale");
+
+  const nineHours = await kept("2026-09-03T12:00", "2026-09-03T19:00:00Z");
+  eq("9 h old: the temperature now is WITHHELD", nineHours.current.temperatureC.value, null);
+  eq("... and the wind", nineHours.current.windKph.value, null);
+  check("... with no error: the forecast ahead is still usable", !nineHours.error);
+  eq("9 h old: forecast sentence", forecastAgeSentence(forecastAge(nineHours.readAt)), "Forecast read 9 h ago.");
+
+  at("2026-09-04T16:00:00Z");
+  {
+    const payload = {
+      utc_offset_seconds: 7200,
+      current: { time: "2026-09-03T12:00", temperature_2m: -4 },
+      hourly: { time: stamps(Date.parse("2026-09-03T00:00:00Z"), 48) },
+      daily: { time: ["2026-09-03", "2026-09-04", "2026-09-05"], temperature_2m_max: [1, 2, 3] },
+    };
+    (globalThis as { fetch: unknown }).fetch = async () => ({ ok: true, status: 200, json: async () => payload });
+    const d = await ask();
+    eq("a kept copy's finished days are dropped: daily[0] is today on the mountain", d.daily[0]?.date, "2026-09-04");
+  }
+
+  const thirtyHours = await kept("2026-09-03T12:00", "2026-09-04T16:00:00Z");
+  eq("30 h old: greyed and labelled", forecastAgeSentence(forecastAge(thirtyHours.readAt)), "Old forecast, read 30 h ago. Nothing newer has reached this phone.");
+  eq("30 h old: forecast band", forecastAge(thirtyHours.readAt)?.forecast, "stale");
+
+  const fourDays = await kept("2026-09-03T12:00", "2026-09-07T12:00:00Z");
+  check("4 days old: silent, carried as an error", Boolean(fourDays.error), String(fourDays.error));
+  eq("... no hours are shown", fourDays.hourly.hours.length, 0);
+  eq("... no days are shown", fourDays.daily.length, 0);
+  eq("... no temperature", fourDays.current.temperatureC.value, null);
+  eq("a response with no stamp has no age, and nothing is invented", forecastAge(null), null);
 
   /* ---------------------------------------------------------------------- */
 
